@@ -1,0 +1,145 @@
+
+    replace = """
+    "Given a sentence that may contain multiple actions or simultaneous actions, identify the subject(s), verb(s), and object(s) for each action. Then, perform the following replacements:
+
+    1. Subject replacement
+    If the sentence contains multiple subjects (e.g., separated by commas), replace each subject one by one with an appropriate pronoun (he/she/they for singular, they for plural). If any subject is already a pronoun (e.g., he, she, they), replace it with 'Someone.'
+    
+    2. Verb replacement
+    For sentences with multiple verbs, replace each verb one by one with a more general action verb like 'performs an action' or 'acts on.'
+
+    3. Object replacement
+    For sentences with multiple objects, replace each object one by one according to the following rules:
+    - If the object is a noun:
+        - If it refers to a person, replace it with 'him', 'her', or 'them' depending on singularity and gender.
+        - If it refers to a thing, replace it with 'it' for singular or 'them' for plural.
+    - If the object is already a pronoun:
+        - If the pronoun refers to a person:
+        Replace it with 'someone' for singular or 'people' or 'individuals' for plural.
+        - If the pronoun refers to a thing:
+        Replace it with 'something' for singular or 'some things' for plural.
+
+    Return the result in the following JSON format:
+
+    {
+        "selective_replacement_query": {
+            "subject_replaced": ["Sentence where one or more subjects are replaced appropriately."],
+            "verb_replaced": ["Sentence where one verb is generalized."],
+            "object_replaced": ["Sentence where one object is replaced."]
+        }
+    }
+
+    Example 1 (Complex Query):
+    User input: 'She and John spray it with a spray bottle and continue brushing their hair.'  
+    Output:
+    {
+        "selective_replacement_query": {
+            "subject_replaced": [
+                "Someone and John spray it with a spray bottle and continue brushing their hair.",
+                "She and Someone spray it with a spray bottle and continue brushing their hair."
+            ],
+            "verb_replaced": [
+                "She and John perform an action with a spray bottle and continue brushing their hair.",
+                "She and John spray it with a spray bottle and act on their hair."
+            ],
+            "object_replaced": [
+                "She and John spray it with a spray bottle and continue brushing something.",
+                "She and John spray something with a spray bottle and continue brushing their hair."
+            ]
+        }
+    }
+
+    Example 2 (Simple Query):
+    User input: 'Alice read the book.'  
+    Output:
+    {
+        "selective_replacement_query": {
+            "subject_replaced": [
+                "She read the book."
+            ],
+            "verb_replaced": [
+                "Alice performs an action on the book."
+            ],
+            "object_replaced": [
+                "Alice read it."
+            ]
+        }
+    }
+    """
+
+
+        prompt_revised_and_generalized = """
+    Your task involves two stages when processing user text input describing human activities in a video:
+
+    1. Stage 1: Revise the input to be more natural.
+    - Fix unnatural phrasing: If the user input sounds awkward or unnatural, revise it to make the phrasing more natural.
+    - Simplify complex expressions: If the user input contains complex expressions, simplify them into clearer and more straightforward language.
+    - Replace difficult or uncommon words: If the user input uses difficult or uncommon words, replace them with more commonly used and simpler words.
+    - If the user input is already natural, free of complex expressions, and uses commonly understood words, you do not need to make any changes. In that case, return the user input as is.
+
+    2. Stage 2: After revising the input, perform subject, verb, and object replacements.
+    - Subject replacement: For each subject in the revised sentence, replace it with an appropriate pronoun (he/she/they for singular, they for plural). If the subject is already a pronoun or is a general term like "Someone" or "A person" that cannot be further generalized, return an empty array for subject replacement.
+    - Verb replacement: For each verb, replace it with a more general action verb like "performs an action" or "acts on."
+    - Object replacement: For each object, apply the following rules:
+        - If the object is a noun:
+            - If it refers to a person, replace it with "him", "her", or "them" depending on singularity and gender.
+            - If it refers to a thing, replace it with "it" for singular or "them" for plural.
+        - If the object is already a pronoun:
+            - If it refers to a person, replace it with "someone" for singular or "people" or "individuals" for plural.
+            - If it refers to a thing, replace it with "something" for singular or "some things" for plural.
+        - If the sentence has no object, return an empty array for object replacement.
+
+    **Important:** 
+    - Ensure the output is valid JSON without any extra formatting like code blocks or tags.
+    - Do not include any extra characters like ```json or similar markers.
+    - All responses must be valid, properly formatted JSON.
+    
+    Output Format:
+    {
+        "revised_query": ["Revised user input after stage 1."],
+        "selective_replacement_query": {
+            "subject_replaced": ["Sentence where one or more subjects are replaced appropriately, or an empty array if no replacement is necessary."],
+            "verb_replaced": ["Sentence where one verb is generalized."],
+            "object_replaced": ["Sentence where one object is replaced, or an empty array if no object is present."]
+        }
+    }
+
+    Example 1:
+    User input: "He then gets off of his snowboard and gives a high five to the driver of the black car."
+
+    Output:
+    {
+        "revised_query": [ "He then gets off his snowboard and gives a high five to the driver of the black car." ],
+        "selective_replacement_query": {
+            "subject_replaced": [ "Someone then gets off his snowboard and gives a high five to the driver of the black car." ],
+            "verb_replaced": [ "He then performs an action on his snowboard and gives a high five to the driver of the black car.", "He then gets off his snowboard and performs an action to the driver of the black car." ],
+            "object_replaced": [ "He then gets off his snowboard and gives a high five to someone.", "He then gets off something and gives a high five to the driver of the black car." ]
+        }
+    }
+
+    Example 2:
+    User input: "Alice reading the books."
+
+    Output: 
+    {
+        "revised_query": [ "Alice is reading the book." ],
+        "selective_replacement_query": {
+            "subject_replaced": [ "She is reading the book." ],
+            "verb_replaced": [ "Alice performs an action on the book." ],
+            "object_replaced": [ "Alice is reading it." ]
+        }
+    }
+
+    Example 3 (no object, general subject):
+    User input: "Someone is running."
+
+    Output:
+    {
+        "revised_query": [ "Someone is running." ],
+        "selective_replacement_query": {
+            "subject_replaced": [],
+            "verb_replaced": [ "Someone performs an action." ],
+            "object_replaced": []
+        }
+    }
+    """
