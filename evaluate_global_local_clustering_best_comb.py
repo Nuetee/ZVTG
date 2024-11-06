@@ -32,10 +32,10 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     recall = np.array([0, 0, 0])
     max_recall = np.array([0, 0, 0])
     best_miou = 0
-    best_alpha = 0.9
+    best_alpha = 1
 
     # 그리드 서치를 위한 파라미터 범위
-    alpha = np.linspace(0.9, 0, 10)
+    alpha = np.linspace(1, 0, 10)
 
     for current_alpha in alpha:
         pbar = tqdm(data.items())
@@ -45,7 +45,7 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
             num_frames = video_feature.shape[0]
             for i in range(len(ann['sentences'])):
                 # query
-                query_json = [{'descriptions': ann['sentences'][i], 'masked_descriptions': ann['masked'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
+                query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
                 proposals = localize_best_comb(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.4, alpha=current_alpha)
                 gt = ann['timestamps'][i]
                 iou_ = calc_iou(proposals[:1], gt)[0]
