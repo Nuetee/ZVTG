@@ -574,11 +574,11 @@ def localize(video_feature, duration, query_json, stride, max_stride, gamma, alp
             dynamic_pred = np.array([0.0, 0.0, 0.0])
             scores = np.array([1.0, 1.0, 1.0])
         else:
-            static_pred = proposals[0][:10]
-            dynamic_pred = pre_proposals[0][:10]
+            static_pred = proposals[0][:cand_num]
+            dynamic_pred = pre_proposals[0][:cand_num]
             # scores = gmm_scores[:10]
             # scores = scores / scores.max()
-            scores = scores[0][:10]
+            scores = scores[0][:cand_num]
             scores = scores / scores.max()
 
 
@@ -599,8 +599,7 @@ def localize(video_feature, duration, query_json, stride, max_stride, gamma, alp
 
     proposals = []
     for t in range(cand_num): ##################### 건들여봐야해!!! 성준아
-        proposals += [[p['response'][t]['static_start'], p['response'][t]['end'], p['response'][t]['confidence']] for p
-                      in answer if len(p['response']) > t]  ### only static
+        proposals += [[p['response'][t]['static_start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answer if len(p['response']) > t]  ### only static
     proposals = np.array(proposals)
     proposals[:,:2] = proposals[:,:2] / num_frames * duration
     post_proposals = proposals
