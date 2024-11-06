@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import json
 from tqdm import tqdm
-from vlm_localizer import localize
+from vlm_localizer_global_local_clustering_integrate import localize
 from qvhhighlight_eval import eval_submission
 import os
 from llm_prompting import select_proposal, filter_and_integrate
@@ -26,35 +26,35 @@ def calc_iou(candidates, gt):
     return inter.clip(min=0) / union
 
 
-def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
+def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0, dataset_name='charades'):
     candidates_json = {}
+    cand_num = 2
     pbar = tqdm(data.items())
+
     for vid, ann in pbar:
         duration = ann['duration']
         video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
-
-        for i in range(len(ann['revise_and_replace'])):
-            query_json = [{'descriptions': ann['revise_and_replace'][i]["revised_query"][0]}]
-            answers = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor))
-            proposals = []
-            for t in range(5):
-                proposals += [[p['response'][t]['start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answers if len(p['response']) > t]
+        
+        for i in range(len(ann['sentences'])):
+            # query
+            query_json = [{'descriptions': ann['sentences'][i], 'masked_descriptions': ann['masked'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
+            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.4, alpha=1, cand_num=cand_num)
             
             gt = ann['timestamps'][i]
             candiates = {
                 "sentence_index": i,
-                "sentence": ann['revise_and_replace'][i]["revised_query"][0],
-                "candidates": proposals,
+                "sentence": ann['sentences'][i],
+                "masked_sentence": ann['masked'][i],
+                "candidates": proposals.tolist(),
                 "duration": duration,
                 "timestamps": gt
             }
-
             if vid not in candidates_json:
                 candidates_json[vid] = []
             
             candidates_json[vid].append(candiates)
     
-    with open("candidates-activitynet-cand_num=5.json", "w") as f:
+    with open(f"candidates_kmeans-{dataset_name}-cand_num={cand_num}.json", "w") as f:
         json.dump(candidates_json, f, indent=4)
 
 if __name__=='__main__':
@@ -64,9 +64,9 @@ if __name__=='__main__':
     assert args.split in dataset['splits'], 'Unsupported split. To evaluate other split, please add the configuration in data_configs.py.'
     
     print('Evaluating', args.dataset, args.split)
-    
+
     with open(args.llm_output) as f:
         data = json.load(f)
-    eval_with_llm(data, dataset['feature_path'], dataset['stride'], dataset['max_stride_factor'], dataset['splits'][args.split]['pad_sec'])
+    eval_with_llm(data, dataset['feature_path'], dataset['stride'], dataset['max_stride_factor'], dataset['splits'][args.split]['pad_sec'], dataset_name=args.dataset)
 
         
