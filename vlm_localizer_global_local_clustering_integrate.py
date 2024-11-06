@@ -197,6 +197,38 @@ def calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma
             if len(masked_query) == 0:
                 continue
             masked_query_score = calc_scores_with_indices(video_features, [masked_query], scores_idx)
+            #### score distribution normalization ####
+            device = masked_query_score.device
+            data = masked_query_score.flatten().cpu().numpy()
+            # 작은 상수 추가로 양수 데이터 보장
+            epsilon = 1e-6
+            data = data + abs(data.min()) + epsilon if np.any(data <= 0) else data
+            
+            # def boxcox_transformed(x, lmbda):
+            #     if lmbda == 0:
+            #         return np.log(x)
+            #     else:
+            #         return (x**lmbda - 1) / lmbda
+
+            # # 최적의 lambda를 찾기 위한 로그 가능도 함수 (최소화할 함수)
+            # def neg_log_likelihood(lmbda):
+            #     transformed_data = boxcox_transformed(data, lmbda)
+            #     # 분산 계산 시 overflow 방지
+            #     var = np.var(transformed_data, ddof=1)
+            #     return -np.sum(np.log(np.abs(transformed_data))) + 0.5 * len(data) * np.log(var)
+
+            # result = minimize_scalar(neg_log_likelihood, bounds=(-2, 2), method='bounded')
+            # best_lambda = result.x
+            # transformed_data = boxcox_transformed(data, best_lambda)
+            transformed_data = boxcox(transformed_data, lmbda=best_lambda)
+            original_min, original_max = data.min(), data.max()
+            transformed_min, transformed_max = transformed_data.min(), transformed_data.max()
+            transformed_data = (transformed_data - transformed_min) / (transformed_max - transformed_min)  # normalize to [0, 1]
+            if original_max - original_min > gamma:
+                transformed_data = transformed_data * (original_max - original_min) + original_min  # scale to original min/max
+            else:
+                transformed_data = transformed_data * (gamma) + original_min
+            masked_query_score = torch.tensor(transformed_data, device=device).reshape(masked_query_score.shape)
             masked_query_scores.append(masked_query_score)
    
     importance_scores_list = []
