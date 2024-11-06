@@ -153,13 +153,17 @@ def calc_scores(video_features, sentences, gt, duration, gamma=0.4, alpha=1):
     result = minimize_scalar(neg_log_likelihood, bounds=(-2, 2), method='bounded')
     best_lambda = result.x
     transformed_data = boxcox_transformed(data, best_lambda)
-    
-    # Leftskewed
-    transformed_data = boxcox(transformed_data, lmbda=alpha)
 
     original_min, original_max = data.min(), data.max()
     transformed_min, transformed_max = transformed_data.min(), transformed_data.max()
     transformed_data = (transformed_data - transformed_min) / (transformed_max - transformed_min)  # normalize to [0, 1]
+    
+    #### Left-skewed ####
+    transformed_data = boxcox(transformed_data, lmbda=alpha)
+    transformed_min, transformed_max = transformed_data.min(), transformed_data.max()
+    transformed_data = (transformed_data - transformed_min) / (transformed_max - transformed_min)  # normalize to [0, 1]
+    #### Leftskewed ####
+    
     if original_max - original_min > gamma:
         transformed_data = transformed_data * (original_max - original_min) + original_min  # scale to original min/max
     else:
