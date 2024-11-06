@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import json
 from tqdm import tqdm
-from vlm_localizer_global_local_clustering_normal_distribution import localize_best_comb
+from vlm_localizer_global_local_clustering_left_skewed_distribution import localize_best_comb
 from qvhhighlight_eval import eval_submission
 import os
 from llm_prompting import select_proposal, filter_and_integrate
@@ -32,12 +32,12 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     recall = np.array([0, 0, 0])
     max_recall = np.array([0, 0, 0])
     best_miou = 0
-    best_gamma = 0.1
+    best_alpha = 0.9
 
     # 그리드 서치를 위한 파라미터 범위
-    gamma = np.linspace(0, 1, 11)
+    alpha = np.linspace(0.9, 0, 10)
 
-    for current_gamma in gamma:
+    for current_alpha in alpha:
         pbar = tqdm(data.items())
         for vid, ann in pbar:
             duration = ann['duration']
@@ -46,7 +46,7 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
             for i in range(len(ann['sentences'])):
                 # query
                 query_json = [{'descriptions': ann['sentences'][i], 'masked_descriptions': ann['masked'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-                proposals = localize_best_comb(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), current_gamma)
+                proposals = localize_best_comb(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.4, alpha=current_alpha)
                 gt = ann['timestamps'][i]
                 iou_ = calc_iou(proposals[:1], gt)[0]
                 ious.append(max(iou_, 0))
@@ -69,12 +69,12 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
         current_miou = sum(ious) / len(ious) if len(ious) > 0 else 0
         if current_miou > best_miou:
             best_miou = current_miou
-            best_gamma = current_gamma
-        print(f'mIoU - {current_gamma}: {current_miou}')
+            best_alpha = current_alpha
+        print(f'mIoU - {current_alpha}: {current_miou}')
 
     # 최적의 조합 출력
     print('Best mIoU:', best_miou)
-    print('Best Gamma:', best_gamma)
+    print('Best Alpha:', best_alpha)
 
 
 
