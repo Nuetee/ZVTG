@@ -183,34 +183,33 @@ def calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma
         transformed_data = transformed_data * (original_max - original_min) + original_min  # scale to original min/max
     else:
         transformed_data = transformed_data * (gamma) + original_min
-
     scores = torch.tensor(transformed_data, device=device).reshape(scores.shape)
     #### score distribution normalization ####
 
     cum_scores = torch.cumsum(scores, dim=1)[0]
 
     #### masked importance scores calcualtion ####
-    # masked_query_scores = []
-    # for masked_element, masked_queries in masked_sentences.items():
-    #     if "prepositional" in masked_element or "subject" in masked_element or "object" in masked_element:
-    #         continue
-    #     for masked_query in masked_queries:
-    #         if len(masked_query) == 0:
-    #             continue
-    #         masked_query_score = calc_scores_with_indices(video_features, [masked_query], scores_idx)
-    #         masked_query_scores.append(masked_query_score)
+    masked_query_scores = []
+    for masked_element, masked_queries in masked_sentences.items():
+        if "prepositional" in masked_element or "subject" in masked_element or "object" in masked_element:
+            continue
+        for masked_query in masked_queries:
+            if len(masked_query) == 0:
+                continue
+            masked_query_score = calc_scores_with_indices(video_features, [masked_query], scores_idx)
+            masked_query_scores.append(masked_query_score)
    
-    # importance_scores_list = []
-    # for masked_query_score in masked_query_scores:
-    #     importance_scores = 1 - masked_query_score / scores
-    #     importance_scores_list.append(importance_scores)
-    # if len(masked_query_scores) == 0:
-    #     importance_scores = torch.ones_like(scores)
-    # else:
-    #     importance_scores_tensor = torch.stack(importance_scores_list, dim=0)
-    #     # importance_scores =  torch.amax(importance_scores_tensor, dim=0)
-    #     importance_scores = importance_scores_tensor.mean(dim=0) # 2D 텐서로 변환
-    # cum_importance_scores = torch.cumsum(importance_scores, dim=1)[0]
+    importance_scores_list = []
+    for masked_query_score in masked_query_scores:
+        importance_scores = 1 - masked_query_score / scores
+        importance_scores_list.append(importance_scores)
+    if len(masked_query_scores) == 0:
+        importance_scores = torch.ones_like(scores)
+    else:
+        importance_scores_tensor = torch.stack(importance_scores_list, dim=0)
+        # importance_scores =  torch.amax(importance_scores_tensor, dim=0)
+        importance_scores = importance_scores_tensor.mean(dim=0) # 2D 텐서로 변환
+    cum_importance_scores = torch.cumsum(importance_scores, dim=1)[0]
     #### masked importance scores calcualtion ####
 
     scores_idx = scores_idx.reshape(-1)
@@ -308,7 +307,7 @@ def calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma
     final_proposals = []
     final_proposals_scores_static = []
     #### masked importance scores calcualtion ####
-    # final_proposals_importance_scores = []
+    final_proposals_importance_scores = []
     #### masked importance scores calcualtion ####
     for i in range(len(global_proposals)):
         for j in range(i + 1, len(global_proposals)):
@@ -319,8 +318,8 @@ def calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma
             score_static = extract_static_score(start, last, cum_scores, num_frames, scores).item()
 
             #### masked importance scores calcualtion ####
-            # importance_score = extract_static_score(start, last, cum_importance_scores, num_frames, scores).item()
-            # final_proposals_importance_scores.append(round(importance_score, 4))
+            importance_score = extract_static_score(start, last, cum_importance_scores, num_frames, scores).item()
+            final_proposals_importance_scores.append(round(importance_score, 4))
             #### masked importance scores calcualtion ####
 
             final_proposals.append([start, last])
@@ -329,12 +328,12 @@ def calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma
     final_proposals_scores_static = torch.tensor(final_proposals_scores_static)
 
     #### masked importance scores calcualtion ####
-    # final_proposals_importance_scores = torch.tensor(final_proposals_importance_scores)
-    # for idx, importance_score in enumerate(final_proposals_importance_scores):
-    #     if importance_score > 0:
-    #         final_proposals_scores_static[idx] *= 1.1
-    #     else:
-    #         final_proposals_scores_static[idx] *= 0.7
+    final_proposals_importance_scores = torch.tensor(final_proposals_importance_scores)
+    for idx, importance_score in enumerate(final_proposals_importance_scores):
+        if importance_score > 0:
+            final_proposals_scores_static[idx] *= 1.1
+        else:
+            final_proposals_scores_static[idx] *= 0.7
     #### masked importance scores calcualtion ####
 
     final_proposals = torch.tensor(final_proposals)
