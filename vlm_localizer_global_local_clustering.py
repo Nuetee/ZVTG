@@ -366,10 +366,6 @@ def calc_scores(video_features, sentences, gt, duration):
     value_avg, index_avg = final_proposals_scores_avg.sort(descending=True)
     final_proposals_avg = final_proposals[index_avg]
     final_proposals_scores_avg = final_proposals_scores_avg[index_avg]
-    print(final_proposals_static[:5])
-    print(final_proposals_avg[:5])
-    print(gt)
-    print("=================")
     ##### important debug
     # for i in range(len(final_proposals)):
     #     print(final_proposals[i], final_proposals_scores[i])
