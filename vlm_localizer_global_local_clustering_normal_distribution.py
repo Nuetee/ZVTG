@@ -2,7 +2,7 @@ import os
 from tqdm import tqdm
 import torch
 import numpy as np
-from scipy.stats import boxcox
+from scipy.optimize import minimize_scalar
 import torch.nn.functional as F
 from lavis.models import load_model_and_preprocess
 from torchvision import transforms
@@ -10,7 +10,6 @@ from llm_prompting import select_proposal
 
 model, vis_processors, text_processors = load_model_and_preprocess("blip2_image_text_matching", "coco", device='cuda',
                                                                    is_eval=True)
-# model, vis_processors, text_processors = load_model_and_preprocess("clip_feature_extractor", model_type="ViT-L-14", device='cuda', is_eval=True) ### CLIP
 
 vis_processors = transforms.Compose([
     t for t in vis_processors['eval'].transform.transforms if not isinstance(t, transforms.ToTensor)
@@ -131,10 +130,41 @@ def calc_scores(video_features, sentences, gt, duration):
     scores, scores_idx = scores.max(dim=-1)
     scores = scores.mean(dim=0, keepdim=True)
 
-    import pdb;pdb.set_trace()
-    scores_numpy = scores.numpy()
-    normalized_scores, lambda_value = boxcox(scores_numpy)
-    normalized_scores = torch.tensor(normalized_scores)
+    device = scores.device
+    data = scores.flatten().cpu().numpy()
+    # 작은 상수 추가로 양수 데이터 보장
+    epsilon = 1e-6
+    data = data + abs(data.min()) + epsilon if np.any(data <= 0) else data
+    
+    def boxcox_transformed(x, lmbda):
+        if lmbda == 0:
+            return np.log(x)
+        else:
+            return (x**lmbda - 1) / lmbda
+
+    # 최적의 lambda를 찾기 위한 로그 가능도 함수 (최소화할 함수)
+    def neg_log_likelihood(lmbda):
+        transformed_data = boxcox_transformed(data, lmbda)
+        # 분산 계산 시 overflow 방지
+        var = np.var(transformed_data, ddof=1)
+        return -np.sum(np.log(np.abs(transformed_data))) + 0.5 * len(data) * np.log(var)
+
+    # lambda 범위 내에서 최적화
+    result = minimize_scalar(neg_log_likelihood, bounds=(-2, 2), method='bounded')
+    best_lambda = result.x
+    
+    # 최적의 lambda로 변환 데이터 생성
+    transformed_data = boxcox_transformed(data, best_lambda)
+
+    original_min, original_max = data.min(), data.max()
+    transformed_min, transformed_max = transformed_data.min(), transformed_data.max()
+    transformed_data = (transformed_data - transformed_min) / (transformed_max - transformed_min)  # normalize to [0, 1]
+    if original_max - original_min > 0.5:
+        transformed_data = transformed_data * (original_max - original_min) + original_min  # scale to original min/max
+    else:
+        transformed_data = transformed_data * (0.5) + original_min
+    # 변환 결과를 다시 텐서로 변환하고 원래 형태로 복원
+    scores = torch.tensor(transformed_data, device=device).reshape(scores.shape)
 
     cum_scores = torch.cumsum(scores, dim=1)[0]
 

@@ -32,6 +32,7 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     recall = np.array([0, 0, 0])
     max_recall = np.array([0, 0, 0])
     pbar = tqdm(data.items())
+    
     for vid, ann in pbar:
         duration = ann['duration']
         video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
@@ -58,13 +59,13 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
         # pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
         pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious)), "max_mIoU": sum(max_ious) / len(max_ious), 'max_recall': str(max_recall / len(max_ious))})
 
-        print('mIoU:', sum(ious) / len(ious))
-        for th, r in zip(thresh, recall):
-            print(f'R@{th}:', r / len(ious))
+    print('mIoU:', sum(ious) / len(ious))
+    for th, r in zip(thresh, recall):
+        print(f'R@{th}:', r / len(ious))
 
-        print('max_mIoU:', sum(max_ious) / len(max_ious)) #####
-        for th, max_r in zip(thresh, max_recall): #####
-            print(f'MAX R@{th}:', max_r / len(max_ious)) #####
+    print('max_mIoU:', sum(max_ious) / len(max_ious)) #####
+    for th, max_r in zip(thresh, max_recall): #####
+        print(f'MAX R@{th}:', max_r / len(max_ious)) #####
 
 
 def eval(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
