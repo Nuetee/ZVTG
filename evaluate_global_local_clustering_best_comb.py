@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import json
 from tqdm import tqdm
-from vlm_localizer_global_local_clustering_masked import localize
+from vlm_localizer_global_local_clustering_normal_distribution import localize_best_comb
 from qvhhighlight_eval import eval_submission
 import os
 from llm_prompting import select_proposal, filter_and_integrate
@@ -46,7 +46,7 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
             for i in range(len(ann['sentences'])):
                 # query
                 query_json = [{'descriptions': ann['sentences'][i], 'masked_descriptions': ann['masked'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-                proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), current_gamma)
+                proposals = localize_best_comb(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), current_gamma)
                 gt = ann['timestamps'][i]
                 iou_ = calc_iou(proposals[:1], gt)[0]
                 ious.append(max(iou_, 0))

@@ -115,7 +115,7 @@ def split_interval(init_timestep):
     ranges.append([start, end])
     return torch.tensor(ranges)
 
-def calc_scores(video_features, sentences, gt, duration):
+def calc_scores(video_features, sentences, gt, duration, gamma=0.5):
     num_frames = video_features.shape[0]
     gt = torch.round(torch.tensor(gt) / torch.tensor(duration) * num_frames).to(torch.int)
     with torch.no_grad():
@@ -159,10 +159,10 @@ def calc_scores(video_features, sentences, gt, duration):
     original_min, original_max = data.min(), data.max()
     transformed_min, transformed_max = transformed_data.min(), transformed_data.max()
     transformed_data = (transformed_data - transformed_min) / (transformed_max - transformed_min)  # normalize to [0, 1]
-    if original_max - original_min > 0.5:
+    if original_max - original_min > gamma:
         transformed_data = transformed_data * (original_max - original_min) + original_min  # scale to original min/max
     else:
-        transformed_data = transformed_data * (0.5) + original_min
+        transformed_data = transformed_data * (gamma) + original_min
     # 변환 결과를 다시 텐서로 변환하고 원래 형태로 복원
     scores = torch.tensor(transformed_data, device=device).reshape(scores.shape)
 
@@ -347,10 +347,10 @@ def extract_avg_score(start, end, cum_scores, num_frames, scores):
     return avg_score
 
 
-def generate_proposal(video_features, sentences, gt, duration, stride, max_stride, nms_thresh=0.3):
+def generate_proposal(video_features, sentences, gt, duration, stride, max_stride, gamma=0.5, nms_thresh=0.3):
     num_frames = video_features.shape[0]
     ground_truth = [round(gt[0] / duration * num_frames, 0), round(gt[1] / duration * num_frames, 0)]
-    scores, final_proposals, final_proposals_scores, local_proposals, local_proposals_scores = calc_scores(video_features, sentences, gt, duration)
+    scores, final_proposals, final_proposals_scores, local_proposals, local_proposals_scores = calc_scores(video_features, sentences, gt, duration, gamma)
     cum_scores = torch.cumsum(scores, dim=1)[0]
 
     masks = (scores > 0.2).float()
@@ -562,3 +562,51 @@ def localize(video_feature, duration, query_json, stride, max_stride):
     # print('===================================')
     return post_proposals
 
+def localize_best_comb(video_feature, duration, query_json, stride, max_stride, gamma):
+    answer = []
+    for query in query_json:
+        # import pdb; pdb.set_trace()
+        gt = query['gt']
+        duration = query['duration']
+        proposals, scores, pre_proposals, _, _, _, _, num_frames = generate_proposal(video_feature, query['descriptions'], gt, duration, stride, max_stride, gamma)
+
+        if len(proposals[0]) == 0:
+            static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
+            dynamic_pred = np.array([0.0, 0.0, 0.0])
+            scores = np.array([1.0, 1.0, 1.0])
+        else:
+            static_pred = proposals[0][:10]
+            dynamic_pred = pre_proposals[0][:10]
+            # scores = gmm_scores[:10]
+            # scores = scores / scores.max()
+            scores = scores[0][:10]
+            scores = scores / scores.max()
+
+
+            # if scores.min() < 0:
+            #     scores = scores + (-scores.min() + 1e-4)
+            # scores = scores / scores.max()
+            # scores = scores + (1- scores.max()) #### 공사중
+
+        query['response'] = []
+        for i in range(len(static_pred)):
+            query['response'].append({
+                'start': float(dynamic_pred[i]),
+                'static_start': float(static_pred[i][0]),
+                'end': float(static_pred[i][1]),
+                'confidence': float(scores[i])
+            })
+        answer.append(query)
+
+    proposals = []
+    for t in range(5): ##################### 건들여봐야해!!! 성준아
+        proposals += [[p['response'][t]['static_start'], p['response'][t]['end'], p['response'][t]['confidence']] for p
+                      in answer if len(p['response']) > t]  ### only static
+    proposals = np.array(proposals)
+    proposals[:,:2] = proposals[:,:2] / num_frames * duration
+    post_proposals = proposals
+   
+    np.set_printoptions(precision=4, suppress=True)
+    post_proposals = select_proposal(np.array(post_proposals))
+   
+    return post_proposals
