@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import json
 from tqdm import tqdm
-from vlm_localizer_global_local_clustering_copy import localize
+from vlm_localizer_global_local_clustering_normal_distribution import localize
 from qvhhighlight_eval import eval_submission
 import os
 from llm_prompting import select_proposal, filter_and_integrate
@@ -31,40 +31,33 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
     max_recall = np.array([0, 0, 0])
-    min_cluster_sims = np.linspace(0.6, 0.95, 8)
-    best_iou = 0
-    best_sim = 0.6
-    for min_cluster_sim in min_cluster_sims:
-        pbar = tqdm(data.items())
-        for vid, ann in pbar:
-            duration = ann['duration']
-            video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
-            num_frames = video_feature.shape[0]
-            for i in range(len(ann['sentences'])):
-                # query
-                query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-                proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), min_cluster_sim)
-                gt = ann['timestamps'][i]
-                iou_ = calc_iou(proposals[:1], gt)[0]
-                ious.append(max(iou_, 0))
-                recall += thresh <= iou_
+    pbar = tqdm(data.items())
+    for vid, ann in pbar:
+        duration = ann['duration']
+        video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
+        num_frames = video_feature.shape[0]
+        for i in range(len(ann['sentences'])):
+            # query
+            query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
+            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor))
+            gt = ann['timestamps'][i]
+            iou_ = calc_iou(proposals[:1], gt)[0]
+            ious.append(max(iou_, 0))
+            recall += thresh <= iou_
 
-                ######
-                max_iou_ = 0
-                for i in range(len(proposals)):
-                    temp_iou_ = calc_iou(proposals[i:i+1], gt)[0]
-                    if temp_iou_ > max_iou_:
-                        max_iou_ = temp_iou_
-                max_ious.append(max(max_iou_, 0))
-                max_recall += thresh <= max_iou_
-                ######
+            ######
+            max_iou_ = 0
+            for i in range(len(proposals)):
+                temp_iou_ = calc_iou(proposals[i:i+1], gt)[0]
+                if temp_iou_ > max_iou_:
+                    max_iou_ = temp_iou_
+            max_ious.append(max(max_iou_, 0))
+            max_recall += thresh <= max_iou_
+            ######
 
-            # pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
-            pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious)), "max_mIoU": sum(max_ious) / len(max_ious), 'max_recall': str(max_recall / len(max_ious))})
+        # pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
+        pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious)), "max_mIoU": sum(max_ious) / len(max_ious), 'max_recall': str(max_recall / len(max_ious))})
 
-        if best_iou < sum(ious) / len(ious):
-            best_iou = sum(ious) / len(ious)
-            best_sim = min_cluster_sim
         print('mIoU:', sum(ious) / len(ious))
         for th, r in zip(thresh, recall):
             print(f'R@{th}:', r / len(ious))
