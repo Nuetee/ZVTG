@@ -281,22 +281,27 @@ def calc_scores_masked(video_features, sentences, masked_sentences, gt, duration
     final_proposals_scores_static = torch.tensor(final_proposals_scores_static)
     final_proposals_importance_scores = torch.tensor(final_proposals_importance_scores)
     
-    temperature = 1 / len(final_proposals)
-    final_proposals_scores_static = torch.nn.functional.softmax(final_proposals_scores_static / 0.01, dim=0)
+    # temperature = 1 / len(final_proposals)
+    # final_proposals_scores_static = torch.nn.functional.softmax(final_proposals_scores_static / 0.01, dim=0)
     
-    # 최소-최대 정규화로 범위를 조정
-    min_val = torch.min(final_proposals_importance_scores)
-    max_val = torch.max(final_proposals_importance_scores)
-    normalized_importance_scores = (final_proposals_importance_scores - min_val) / (max_val - min_val)
+    # # 최소-최대 정규화로 범위를 조정
+    # min_val = torch.min(final_proposals_importance_scores)
+    # max_val = torch.max(final_proposals_importance_scores)
+    # normalized_importance_scores = (final_proposals_importance_scores - min_val) / (max_val - min_val)
     
-    # flattened_scores의 범위에 맞추어 스케일링
-    scores_min = torch.min(final_proposals_scores_static)
-    scores_max = torch.max(final_proposals_scores_static)
-    scaled_importance_scores = normalized_importance_scores * (scores_max - scores_min) + scores_min
+    # # flattened_scores의 범위에 맞추어 스케일링
+    # scores_min = torch.min(final_proposals_scores_static)
+    # scores_max = torch.max(final_proposals_scores_static)
+    # scaled_importance_scores = normalized_importance_scores * (scores_max - scores_min) + scores_min
+    for idx, importance_score in enumerate(final_proposals_importance_scores):
+        if importance_score > 0:
+            final_proposals_scores_static[idx] *= 1.1
+        else:
+            final_proposals_scores_static[idx] *= 0.7
     
     # 조정된 값을 소프트맥스에 적용
-    final_proposals_importance_scores = torch.nn.functional.softmax(scaled_importance_scores / temperature, dim=0)
-    final_proposals_scores_static = final_proposals_scores_static * (final_proposals_importance_scores**gamma)
+    # final_proposals_importance_scores = torch.nn.functional.softmax(scaled_importance_scores / temperature, dim=0)
+    # final_proposals_scores_static = final_proposals_scores_static * (final_proposals_importance_scores**gamma)
     
     final_proposals = torch.tensor(final_proposals)
     value_static, index_static = final_proposals_scores_static.sort(descending=True)
