@@ -35,7 +35,7 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     best_alpha = 1
 
     # 그리드 서치를 위한 파라미터 범위
-    alpha = np.linspace(1, 0, 10)
+    alpha = np.linspace(1, 0, 11)
 
     for current_alpha in alpha:
         pbar = tqdm(data.items())
