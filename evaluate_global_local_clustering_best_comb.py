@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import json
 from tqdm import tqdm
-from vlm_localizer_global_local_clustering_integrate import localize
+from vlm_localizer_global_local_clustering_cand_num import localize
 from qvhhighlight_eval import eval_submission
 import os
 from llm_prompting import select_proposal, filter_and_integrate
@@ -35,7 +35,7 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     best_cand_num = 3
 
     # 그리드 서치를 위한 파라미터 범위
-    cand_nums = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    cand_nums = [5, 6, 7, 8, 9, 10, 11, 12]
 
     for current_cand_num in cand_nums:
         pbar = tqdm(data.items())
@@ -46,7 +46,7 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
             for i in range(len(ann['sentences'])):
                 # query
                 query_json = [{'descriptions': ann['sentences'][i], 'masked_descriptions': ann['masked'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-                proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.4, alpha=1, cand_num=current_cand_num)
+                proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), cand_num=current_cand_num)
                 gt = ann['timestamps'][i]
                 iou_ = calc_iou(proposals[:1], gt)[0]
                 ious.append(max(iou_, 0))

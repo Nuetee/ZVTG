@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import json
 from tqdm import tqdm
-from vlm_localizer_global_local_clustering_integrate import localize
+from vlm_localizer_global_local_clustering import localize
 from qvhhighlight_eval import eval_submission
 import os
 from llm_prompting import select_proposal, filter_and_integrate
@@ -32,7 +32,7 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     recall = np.array([0, 0, 0])
     max_recall = np.array([0, 0, 0])
     pbar = tqdm(data.items())
-
+    
     for vid, ann in pbar:
         duration = ann['duration']
         video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
@@ -40,7 +40,7 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
         for i in range(len(ann['sentences'])):
             # query
             query_json = [{'descriptions': ann['sentences'][i], 'masked_descriptions': ann['masked'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=1)
+            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), cand_num=5)
             gt = ann['timestamps'][i]
             iou_ = calc_iou(proposals[:1], gt)[0]
             ious.append(max(iou_, 0))
