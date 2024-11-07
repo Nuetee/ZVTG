@@ -159,10 +159,10 @@ def calc_scores(video_features, sentences, gt, duration, gamma=0.5):
     original_min, original_max = data.min(), data.max()
     transformed_min, transformed_max = transformed_data.min(), transformed_data.max()
     transformed_data = (transformed_data - transformed_min) / (transformed_max - transformed_min)  # normalize to [0, 1]
-    if original_max - original_min > 1:
+    if original_max - original_min > gamma:
         transformed_data = transformed_data * (original_max - original_min) + original_min  # scale to original min/max
     else:
-        transformed_data = transformed_data * (1) + original_min
+        transformed_data = transformed_data * (gamma) + original_min
     # 변환 결과를 다시 텐서로 변환하고 원래 형태로 복원
     scores = torch.tensor(transformed_data, device=device).reshape(scores.shape)
 
