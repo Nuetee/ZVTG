@@ -331,7 +331,7 @@ def generate_proposal(video_features, sentences, gt, duration, stride, max_strid
         current_frame = final_proposal[0]
         dynamic_prefix = dynamic_frames[0][current_frame]
         while True:
-            if dynamic_frames[0][current_frame - 1] != dynamic_prefix:
+            if current_frame == 0 or dynamic_frames[0][current_frame - 1] != dynamic_prefix:
                 break
             current_frame -= 1
         final_proposal[0] = current_frame
