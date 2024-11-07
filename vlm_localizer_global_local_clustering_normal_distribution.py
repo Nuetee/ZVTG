@@ -159,10 +159,10 @@ def calc_scores(video_features, sentences, gt, duration, gamma=0.5):
     original_min, original_max = data.min(), data.max()
     transformed_min, transformed_max = transformed_data.min(), transformed_data.max()
     transformed_data = (transformed_data - transformed_min) / (transformed_max - transformed_min)  # normalize to [0, 1]
-    if original_max - original_min > gamma:
+    if original_max - original_min > 1:
         transformed_data = transformed_data * (original_max - original_min) + original_min  # scale to original min/max
     else:
-        transformed_data = transformed_data * (gamma) + original_min
+        transformed_data = transformed_data * (1) + original_min
     # 변환 결과를 다시 텐서로 변환하고 원래 형태로 복원
     scores = torch.tensor(transformed_data, device=device).reshape(scores.shape)
 
@@ -493,28 +493,13 @@ def post_processing(proposals, local_proposals, local_proposals_scores, gt, num_
     return np.array(post_final_proposals_total)
 
 
-def localize(video_feature, duration, query_json, stride, max_stride):
+def localize(video_feature, duration, query_json, stride, max_stride, gamma):
     answer = []
     for query in query_json:
         # import pdb; pdb.set_trace()
         gt = query['gt']
         duration = query['duration']
-        proposals, scores, pre_proposals, ori_scores, ori_cum_scores, local_proposals, local_proposals_scores, num_frames = generate_proposal(video_feature, query['descriptions'], gt,
-                                                                         duration, stride, max_stride)
-
-        # print(ori_scores.mean(), ori_scores.max(), ori_scores.min(), ori_scores.std())
-        #### select proposal 에서 GMM score 사용
-        # from sklearn.mixture import GaussianMixture
-        # np_scores = np.array(ori_scores.cpu()).reshape(-1, 1)
-        # gmm = GaussianMixture(n_components=2, random_state=0)
-        # gmm.fit(np_scores)
-        # prob = gmm.predict_proba(np_scores)
-        # prob = torch.tensor(prob[:, gmm.means_.argmax()])
-        # gmm_scores = torch.tensor([])
-        # for i in range(len(proposals[0])):
-        #     gmm_score = prob[proposals[0][i][0]:proposals[0][i][1]].mean()
-        #     gmm_scores = torch.cat((gmm_scores, gmm_score.unsqueeze(0)))
-        #### select proposal 에서 GMM score 사용
+        proposals, scores, pre_proposals, _, _, _, _, num_frames = generate_proposal(video_feature, query['descriptions'], gt, duration, stride, max_stride, gamma)
 
         if len(proposals[0]) == 0:
             static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
@@ -551,15 +536,8 @@ def localize(video_feature, duration, query_json, stride, max_stride):
     proposals = np.array(proposals)
     proposals[:,:2] = proposals[:,:2] / num_frames * duration
     post_proposals = proposals
-    # print(np.array(proposals)[:3])
-    # post_proposals = post_processing(proposals, local_proposals, local_proposals_scores, gt, num_frames, duration, ori_cum_scores, ori_scores) ### Refinement
-    # print(post_proposals[:3])
     np.set_printoptions(precision=4, suppress=True)
-    # print(post_proposals)
     post_proposals = select_proposal(np.array(post_proposals))
-    # print(post_proposals)
-    # print(gt, duration)
-    # print('===================================')
     return post_proposals
 
 def localize_best_comb(video_feature, duration, query_json, stride, max_stride, gamma):
