@@ -328,14 +328,14 @@ def select_proposal2(inputs, scores, stride):
             best_static_score_left = 0
             best_proposal_left = [highest_score_interval[0], highest_score_interval[0]]
             for kernel_size in range(stride, scores_left.size(-1)+1, stride): # stride에 따라 다양한 크기의 커널을 사용하여 구간 제안을 생성
-                inner_sum = scores_left[:, scores_left.size(-1)-kernel_size:scores_left.size(-1)].sum()
-                inner_num = masks[:, scores_left.size(-1)-kernel_size:scores_left.size(-1)].sum()
+                inner_sum = scores_left[:, scores_left.size(-1) - kernel_size:scores_left.size(-1)].sum()
+                inner_num = masks[:, scores_left.size(-1) - kernel_size:scores_left.size(-1)].sum()
                 outer_sum = scores_left.sum() - inner_sum
                 outer_num = masks.sum() - inner_num
                 if outer_num != 0:
                     static_score_left = inner_sum / kernel_size - outer_sum / outer_num
                 else:
-                    static_score_left = inner_sum / kernel_size - (scores_left[:, 0] + scores_left[:, scores_left.size(-1)])/2
+                    static_score_left = inner_sum / kernel_size - (scores_left[:, 0] + scores_left[:,- 1]) / 2
                 if static_score_left > best_static_score_left:
                     best_static_score_left = static_score_left
                     best_proposal_left = [highest_score_interval[0]-kernel_size, highest_score_interval[0]]
