@@ -6,3 +6,5 @@ lowest_sample/
 LongCLIP-B/
 cadidate*/
 imgs/
+*.pyc
+__pycache__/
