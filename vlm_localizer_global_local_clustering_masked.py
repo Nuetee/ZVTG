@@ -130,7 +130,7 @@ def calc_scores_with_indices(video_features, sentences, indices):
 
     return scores
 
-def calc_scores_masked(video_features, sentences, masked_sentences, gt, duration, gamma):
+def calc_scores_masked(video_features, sentences, masked_sentences, gt, duration, high=1.1, low=0.7):
     num_frames = video_features.shape[0]
     gt = torch.round(torch.tensor(gt) / torch.tensor(duration) * num_frames).to(torch.int)
     with torch.no_grad():
@@ -295,9 +295,9 @@ def calc_scores_masked(video_features, sentences, masked_sentences, gt, duration
     # scaled_importance_scores = normalized_importance_scores * (scores_max - scores_min) + scores_min
     for idx, importance_score in enumerate(final_proposals_importance_scores):
         if importance_score > 0:
-            final_proposals_scores_static[idx] *= 1.1
+            final_proposals_scores_static[idx] *= high
         else:
-            final_proposals_scores_static[idx] *= 0.7
+            final_proposals_scores_static[idx] *= low
     
     # 조정된 값을 소프트맥스에 적용
     # final_proposals_importance_scores = torch.nn.functional.softmax(scaled_importance_scores / temperature, dim=0)
@@ -340,9 +340,9 @@ def extract_avg_score(start, end, cum_scores, num_frames, scores):
     return avg_score
 
 
-def generate_proposal_masked(video_features, sentences, masked_sentences, gt, duration, stride, gamma):
+def generate_proposal_masked(video_features, sentences, masked_sentences, gt, duration, stride, high=1.1, low=0.7):
     num_frames = video_features.shape[0]
-    scores, final_proposals, final_proposals_scores, local_proposals, local_proposals_scores = calc_scores_masked(video_features, sentences, masked_sentences, gt, duration, gamma)
+    scores, final_proposals, final_proposals_scores, local_proposals, local_proposals_scores = calc_scores_masked(video_features, sentences, masked_sentences, gt, duration, high=high, low=low)
     cum_scores = torch.cumsum(scores, dim=1)[0]
 
     masks = (scores > 0.2).float()
@@ -448,13 +448,13 @@ def post_processing(proposals, local_proposals, local_proposals_scores, gt, num_
     return np.array(post_final_proposals_total)
 
 
-def localize(video_feature, duration, query_json, stride, max_stride, gamma):
+def localize(video_feature, duration, query_json, stride, max_stride, high=1.1, low=0.7):
     answer = []
     for query in query_json:
         # import pdb; pdb.set_trace()
         gt = query['gt']
         duration = query['duration']
-        proposals, scores, pre_proposals, ori_scores, ori_cum_scores, local_proposals, local_proposals_scores, num_frames = generate_proposal_masked(video_feature, query['descriptions'], query['masked_descriptions'], gt, duration, stride, gamma)
+        proposals, scores, pre_proposals, _, _, _, _, num_frames = generate_proposal_masked(video_feature, query['descriptions'], query['masked_descriptions'], gt, duration, stride, high=high, low=low)
 
         if len(proposals[0]) == 0:
             static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
