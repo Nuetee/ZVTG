@@ -386,7 +386,7 @@ def extract_avg_score(start, end, cum_scores, num_frames, scores):
     return avg_score
 
 
-def generate_proposal(video_features, sentences, masked_sentences, gt, duration, stride, max_stride, gamma=0.4, nms_thresh=0.3):
+def generate_proposal(video_features, sentences, masked_sentences, gt, duration, stride, max_stride, gamma=0.4):
     num_frames = video_features.shape[0]
     ground_truth = [round(gt[0] / duration * num_frames, 0), round(gt[1] / duration * num_frames, 0)]
     scores, final_proposals, final_proposals_scores = calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma)
