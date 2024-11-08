@@ -116,12 +116,16 @@ def split_interval(init_timestep):
     ranges.append([start, end])
     return torch.tensor(ranges)
 
-def optimal_k_selection(features, k_range=(2, 6)):
+def optimal_k_selection(features, k_range=(3, 5)):
     best_k = k_range[0]
     best_score = -1  # 초기화
     best_labels = None
 
     for k in range(k_range[0], k_range[1] + 1):
+        # 샘플 수가 현재 클러스터 수 k보다 적으면 건너뛰기
+        if len(features) < k:
+            continue
+        
         kmeans = KMeans(n_clusters=k, n_init=10, random_state=42)
         labels = kmeans.fit_predict(features)
         

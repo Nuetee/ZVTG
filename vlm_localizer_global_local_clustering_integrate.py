@@ -140,6 +140,10 @@ def optimal_k_selection(features, k_range=(2, 6)):
     best_labels = None
 
     for k in range(k_range[0], k_range[1] + 1):
+        # 샘플 수가 현재 클러스터 수 k보다 적으면 건너뛰기
+        if len(features) < k:
+            continue
+        
         kmeans = KMeans(n_clusters=k, n_init=10, random_state=42)
         labels = kmeans.fit_predict(features)
         
@@ -221,26 +225,26 @@ def calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma
             device = masked_query_score.device
             data = masked_query_score.flatten().cpu().numpy()
             # 작은 상수 추가로 양수 데이터 보장
-            epsilon = 1e-6
-            data = data + abs(data.min()) + epsilon if np.any(data <= 0) else data
+            # epsilon = 1e-6
+            # data = data + abs(data.min()) + epsilon if np.any(data <= 0) else data
             
-            def boxcox_transformed(x, lmbda):
-                if lmbda == 0:
-                    return np.log(x)
-                else:
-                    return (x**lmbda - 1) / lmbda
+            # def boxcox_transformed(x, lmbda):
+            #     if lmbda == 0:
+            #         return np.log(x)
+            #     else:
+            #         return (x**lmbda - 1) / lmbda
 
-            # 최적의 lambda를 찾기 위한 로그 가능도 함수 (최소화할 함수)
-            def neg_log_likelihood(lmbda):
-                transformed_data = boxcox_transformed(data, lmbda)
-                # 분산 계산 시 overflow 방지
-                var = np.var(transformed_data, ddof=1)
-                return -np.sum(np.log(np.abs(transformed_data))) + 0.5 * len(data) * np.log(var)
+            # # 최적의 lambda를 찾기 위한 로그 가능도 함수 (최소화할 함수)
+            # def neg_log_likelihood(lmbda):
+            #     transformed_data = boxcox_transformed(data, lmbda)
+            #     # 분산 계산 시 overflow 방지
+            #     var = np.var(transformed_data, ddof=1)
+            #     return -np.sum(np.log(np.abs(transformed_data))) + 0.5 * len(data) * np.log(var)
 
-            result = minimize_scalar(neg_log_likelihood, bounds=(-2, 2), method='bounded')
-            best_lambda = result.x
-            transformed_data = boxcox_transformed(data, best_lambda)
-            # transformed_data = boxcox(transformed_data, lmbda=best_lambda)
+            # result = minimize_scalar(neg_log_likelihood, bounds=(-2, 2), method='bounded')
+            # best_lambda = result.x
+            # transformed_data = boxcox_transformed(data, best_lambda)
+            transformed_data = boxcox(transformed_data, lmbda=best_lambda)
             original_min, original_max = data.min(), data.max()
             transformed_min, transformed_max = transformed_data.min(), transformed_data.max()
             transformed_data = (transformed_data - transformed_min) / (transformed_max - transformed_min)  # normalize to [0, 1]
