@@ -116,27 +116,6 @@ def split_interval(init_timestep):
     ranges.append([start, end])
     return torch.tensor(ranges)
 
-def optimal_k_selection(features, k_range=(2, 6)):
-    best_k = k_range[0]
-    best_score = -1  # 초기화
-    best_labels = None
-
-    for k in range(k_range[0], k_range[1] + 1):
-        kmeans = KMeans(n_clusters=k, n_init=10, random_state=42)
-        labels = kmeans.fit_predict(features)
-        
-        # 실루엣 점수 계산
-        score = silhouette_score(features, labels)
-        
-        # 최적의 점수와 k를 업데이트
-        if score > best_score:
-            best_score = score
-            best_k = k
-            best_labels = labels  # 최적의 k에 대한 클러스터링 결과 저장
-            
-    return best_k, best_labels
-
-
 def calc_scores(video_features, sentences, gt, duration):
     num_frames = video_features.shape[0]
     gt = torch.round(torch.tensor(gt) / torch.tensor(duration) * num_frames).to(torch.int)
@@ -201,10 +180,6 @@ def calc_scores(video_features, sentences, gt, duration):
     kmeans = KMeans(n_clusters=kmeans_k, n_init=10, random_state=42)
     kmeans_labels_global = kmeans.fit_predict(np.array(selected_video_time_features_global.cpu()))
     kmeans_labels_global = torch.tensor(kmeans_labels_global)
-
-    # features_global = np.array(selected_video_time_features_global.cpu())
-    # optimal_k_global, kmeans_labels_global = optimal_k_selection(features_global)
-    # kmeans_labels_global = torch.tensor(kmeans_labels_global)
     #### K-means 클러스터링 적용 (글로벌)
 
     #### K-means 클러스터링 적용 (로컬)
@@ -297,99 +272,160 @@ def calc_scores(video_features, sentences, gt, duration):
     return scores, final_proposals_static[:5], final_proposals_scores_static[:5], local_proposals, local_proposals_scores
 
 
-def min_max_scaling(tensor):
-    min_val = tensor.min()
-    max_val = tensor.max()
-    return (tensor - min_val) / (max_val - min_val) if max_val > min_val else tensor
+def select_proposal2(inputs, scores, stride):
+    weights = inputs[:, -1].clip(min=0)
+    proposals = inputs[:, :-1]
+    proposals = np.round(proposals).astype(int)
 
-# def select_proposal2(inputs, gamma=0.6):
-#     weights = inputs[:, -1].clip(min=0)
-#     proposals = inputs[:, :-1]
-#     scores = np.zeros_like(weights)
+    unique_points = np.unique(proposals.flatten())
 
-#     for j in range(scores.shape[0]):
-#         iou = calc_iou(proposals, proposals[j])
-#         scores[j] += (iou ** gamma * weights).sum()
+    # 구간별 점수를 저장할 딕셔너리 초기화
+    interval_scores = {}
 
-#     idx = np.argsort(-scores)
-#     proposals_sorted = proposals[idx]
-#     unique_points = torch.unique(proposals.flatten()).sort().values
+    # unique_points를 순회하며 각 인접한 지점으로 구간을 정의
+    for i in range(len(unique_points) - 1):
+        start = unique_points[i].item()
+        end = unique_points[i + 1].item()
+        interval_scores[(start, end)] = 0  # 초기 점수는 0으로 설정
 
-#     # 구간별 점수를 저장할 딕셔너리 초기화
-#     interval_scores = {}
-
-#     # unique_points를 순회하며 각 인접한 지점으로 구간을 정의
-#     for i in range(len(unique_points) - 1):
-#         start = unique_points[i].item()
-#         end = unique_points[i + 1].item()
-#         interval_scores[(start, end)] = 0  # 초기 점수는 0으로 설정
-
-#     # 각 구간의 점수를 interval_scores에 합산
-#     for idx, proposal in enumerate(proposals):
-#         start, end = proposal[0].item(), proposal[1].item()
-#         score = weights[idx].item()
-#         proposal_length = end - start  # 구간의 길이
+    # 각 구간의 점수를 interval_scores에 합산
+    for idx, proposal in enumerate(proposals):
+        start, end = proposal[0].item(), proposal[1].item()
+        score = weights[idx].item()
+        proposal_length = end - start  # 구간의 길이
         
-#         # interval_scores의 각 구간과 proposal의 구간이 겹치는 경우 점수 합산
-#         for interval in interval_scores:
-#             interval_start, interval_end = interval
+        # interval_scores의 각 구간과 proposal의 구간이 겹치는 경우 점수 합산
+        for interval in interval_scores:
+            interval_start, interval_end = interval
             
-#             # proposal의 구간과 겹치는 부분이 있는지 확인
-#             if interval_start >= start and interval_end <= end:
-#                 interval_scores[interval] += score
-
-#     sorted_intervals = sorted(interval_scores.items(), key=lambda x: x[1], reverse=True)
-#     best_interval, best_score = sorted_intervals[0]
-#     second_best_interval, second_best_score = sorted_intervals[1]
-
-#     if 
-#     return inputs[idx]
+            # proposal의 구간과 겹치는 부분이 있는지 확인
+            if interval_start >= start and interval_end <= end:
+                interval_scores[interval] += score
 
 
-# def refine_proposals(scores, proposals, static_scores, global_proposals_scores, gt):
-#     # 각 구간이 구분되는 모든 지점을 추출하여 unique_points 리스트 생성
-#     proposals = proposals[:5]
-#     static_scores = static_scores[:5]
-#     # global_proposals_scores = torch.tensor(global_proposals_scores) if isinstance(global_proposals_scores, list) else global_proposals_scores
-#     unique_points = torch.unique(proposals.flatten()).sort().values
+    min_score = min(interval_scores.values())
+    max_score = max(interval_scores.values())
+    # min-max scaling 적용
+    interval_scores = {interval: (interval_score - min_score) / (max_score - min_score) if max_score > min_score else 0 for interval, interval_score in interval_scores.items()}
 
-#     # 구간별 점수를 저장할 딕셔너리 초기화
-#     interval_scores = {}
+    filtered_intervals = [interval for interval, score in interval_scores.items() if score > 0.5]
 
-#     # unique_points를 순회하며 각 인접한 지점으로 구간을 정의
-#     for i in range(len(unique_points) - 1):
-#         start = unique_points[i].item()
-#         end = unique_points[i + 1].item()
-#         interval_scores[(start, end)] = 0  # 초기 점수는 0으로 설정
-
-#     # 각 구간의 점수를 interval_scores에 합산
-#     for idx, proposal in enumerate(proposals):
-#         start, end = proposal[0].item(), proposal[1].item()
-#         score = static_scores[idx].item()
-#         proposal_length = end - start  # 구간의 길이
+    best_proposal_left, best_proposal_right = None, None
+    # 시작 시간 중 가장 빠른 값과 종료 시간 중 가장 느린 값 찾기
+    if filtered_intervals:
+        earliest_start = min(interval[0] for interval in filtered_intervals)
+        latest_end = max(interval[1] for interval in filtered_intervals)
+        highest_score_interval = max(interval_scores.items(), key=lambda x: x[1])[0]
         
-#         # interval_scores의 각 구간과 proposal의 구간이 겹치는 경우 점수 합산
-#         for interval in interval_scores:
-#             interval_start, interval_end = interval
+        if earliest_start < highest_score_interval[0]:
+            intervals_in_range = [interval for interval in interval_scores if interval[0] >= earliest_start and interval[1] <= highest_score_interval[1]]
+            lowest_score_interval = min(intervals_in_range, key=lambda x: interval_scores[x])
+            scores_lowest_mean = scores[:, lowest_score_interval[0]:lowest_score_interval[1]].mean()
+            scores_left = scores[:, earliest_start:highest_score_interval[0]] - scores_lowest_mean
+
+            masks = (scores_left > 0).float()
+            scores_left = scores_left * masks
+            best_static_score_left = 0
+            best_proposal_left = [highest_score_interval[0], highest_score_interval[0]]
+            for kernel_size in range(stride, scores_left.size(-1)+1, stride): # stride에 따라 다양한 크기의 커널을 사용하여 구간 제안을 생성
+                inner_sum = scores_left[:, scores_left.size(-1)-kernel_size:scores_left.size(-1)].sum()
+                inner_num = masks[:, scores_left.size(-1)-kernel_size:scores_left.size(-1)].sum()
+                outer_sum = scores_left.sum() - inner_sum
+                outer_num = masks.sum() - inner_num
+                if outer_num != 0:
+                    static_score_left = inner_sum / kernel_size - outer_sum / outer_num
+                else:
+                    static_score_left = inner_sum / kernel_size - (scores_left[:, 0] + scores_left[:, scores_left.size(-1)])/2
+                if static_score_left > best_static_score_left:
+                    best_static_score_left = static_score_left
+                    best_proposal_left = [highest_score_interval[0]-kernel_size, highest_score_interval[0]]
+        
+        if latest_end > highest_score_interval[1]:
+            intervals_in_range = [interval for interval in interval_scores if interval[0] >= highest_score_interval[1] and interval[1] <= latest_end]
+            lowest_score_interval_right = min(intervals_in_range, key=lambda x: interval_scores[x])
+            scores_lowest_mean = scores[:, lowest_score_interval_right[0]:lowest_score_interval_right[1]].mean()
+            scores_right = scores[:, highest_score_interval[1]:latest_end] - scores_lowest_mean
+
+            masks = (scores_right > 0).float()
+            scores_right = scores_right * masks
+            best_static_score_right = 0
+            best_proposal_right = [highest_score_interval[1], highest_score_interval[1]]
+            for kernel_size in range(stride, scores_right.size(-1) + 1, stride):
+                inner_sum = scores_right[:, :kernel_size].sum()
+                inner_num = masks[:, :kernel_size].sum()
+                outer_sum = scores_right.sum()
+                outer_num = masks.sum() - inner_num
+                if outer_num != 0:
+                    static_score_right = inner_sum / kernel_size - outer_sum / outer_num
+                else:
+                    static_score_right = inner_sum / kernel_size - (scores_right[:, 0] + scores_right[:, -1]) / 2
+                if static_score_right > best_static_score_right:
+                    best_static_score_right = static_score_right
+                    best_proposal_right = [highest_score_interval[1], highest_score_interval[1] + kernel_size]
+        
+        # best_proposal_left와 best_proposal_right가 정의되었는지 확인하고 final_proposal 설정
+        if best_proposal_left and best_proposal_right:
+            final_proposal = [best_proposal_left[0], best_proposal_right[1]]
+        elif best_proposal_left:
+            final_proposal = [best_proposal_left[0], highest_score_interval[1]]
+        elif best_proposal_right:
+            final_proposal = [highest_score_interval[0], best_proposal_right[1]]
+        else:
+            final_proposal = highest_score_interval  # 기본값으로 highest_score_interval 설정
+        
+        final_proposal = np.array([final_proposal])
+    
+    else:
+        sorted_intervals = sorted(interval_scores.items(), key=lambda x: x[1], reverse=True)
+        final_proposal, best_score = sorted_intervals[0]
+        final_proposal = np.array([final_proposal])
+
+    return final_proposal
+
+def refine_proposals(scores, proposals, static_scores, global_proposals_scores, gt):
+    # 각 구간이 구분되는 모든 지점을 추출하여 unique_points 리스트 생성
+    proposals = proposals[:5]
+    static_scores = static_scores[:5]
+    # global_proposals_scores = torch.tensor(global_proposals_scores) if isinstance(global_proposals_scores, list) else global_proposals_scores
+    unique_points = torch.unique(proposals.flatten()).sort().values
+
+    # 구간별 점수를 저장할 딕셔너리 초기화
+    interval_scores = {}
+
+    # unique_points를 순회하며 각 인접한 지점으로 구간을 정의
+    for i in range(len(unique_points) - 1):
+        start = unique_points[i].item()
+        end = unique_points[i + 1].item()
+        interval_scores[(start, end)] = 0  # 초기 점수는 0으로 설정
+
+    # 각 구간의 점수를 interval_scores에 합산
+    for idx, proposal in enumerate(proposals):
+        start, end = proposal[0].item(), proposal[1].item()
+        score = static_scores[idx].item()
+        proposal_length = end - start  # 구간의 길이
+        
+        # interval_scores의 각 구간과 proposal의 구간이 겹치는 경우 점수 합산
+        for interval in interval_scores:
+            interval_start, interval_end = interval
             
-#             # proposal의 구간과 겹치는 부분이 있는지 확인
-#             if interval_start >= start and interval_end <= end:
-#                 interval_scores[interval] += score
-#                 # 겹치는 비율을 계산하여 점수 조정
-#                 # overlap_start = max(interval_start, start)
-#                 # overlap_end = min(interval_end, end)
-#                 # overlap_length = overlap_end - overlap_start
+            # proposal의 구간과 겹치는 부분이 있는지 확인
+            if interval_start >= start and interval_end <= end:
+                interval_scores[interval] += score
+                # 겹치는 비율을 계산하여 점수 조정
+                # overlap_start = max(interval_start, start)
+                # overlap_end = min(interval_end, end)
+                # overlap_length = overlap_end - overlap_start
                 
-#                 # overlap_ratio = overlap_length / proposal_length
-#                 # interval_scores[interval] += score * overlap_ratio
+                # overlap_ratio = overlap_length / proposal_length
+                # interval_scores[interval] += score * overlap_ratio
 
-#     # global_proposals_scores에 Min-Max Scaling 적용
-#     # scaled_global_proposals_scores = min_max_scaling(global_proposals_scores)
+    # global_proposals_scores에 Min-Max Scaling 적용
+    # scaled_global_proposals_scores = min_max_scaling(global_proposals_scores)
 
-#     # interval_scores에 Min-Max Scaling 적용
-#     interval_scores_values = torch.tensor(list(interval_scores.values()))
-#     # scaled_interval_scores_values = min_max_scaling(interval_scores_values)
-#     # scaled_interval_scores = dict(zip(interval_scores.keys(), scaled_interval_scores_values.tolist()))
+    # interval_scores에 Min-Max Scaling 적용
+    interval_scores_values = torch.tensor(list(interval_scores.values()))
+    # scaled_interval_scores_values = min_max_scaling(interval_scores_values)
+    # scaled_interval_scores = dict(zip(interval_scores.keys(), scaled_interval_scores_values.tolist()))
     
 
 ###################### 다른 proposals를 제거한 outer_avg 구하기
@@ -604,19 +640,6 @@ def localize(video_feature, duration, query_json, stride, max_stride):
         proposals, scores, pre_proposals, ori_scores, ori_cum_scores, local_proposals, local_proposals_scores, num_frames = generate_proposal(video_feature, query['descriptions'], gt,
                                                                          duration, stride, max_stride)
 
-        # print(ori_scores.mean(), ori_scores.max(), ori_scores.min(), ori_scores.std())
-        #### select proposal 에서 GMM score 사용
-        # from sklearn.mixture import GaussianMixture
-        # np_scores = np.array(ori_scores.cpu()).reshape(-1, 1)
-        # gmm = GaussianMixture(n_components=2, random_state=0)
-        # gmm.fit(np_scores)
-        # prob = gmm.predict_proba(np_scores)
-        # prob = torch.tensor(prob[:, gmm.means_.argmax()])
-        # gmm_scores = torch.tensor([])
-        # for i in range(len(proposals[0])):
-        #     gmm_score = prob[proposals[0][i][0]:proposals[0][i][1]].mean()
-        #     gmm_scores = torch.cat((gmm_scores, gmm_score.unsqueeze(0)))
-        #### select proposal 에서 GMM score 사용
 
         if len(proposals[0]) == 0:
             static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
@@ -650,17 +673,15 @@ def localize(video_feature, duration, query_json, stride, max_stride):
     for t in range(5): ##################### 건들여봐야해!!! 성준아
         proposals += [[p['response'][t]['static_start'], p['response'][t]['end'], p['response'][t]['confidence']] for p
                       in answer if len(p['response']) > t]  ### only static
+    
     proposals = np.array(proposals)
-    proposals[:,:2] = proposals[:,:2] / num_frames * duration
-    post_proposals = proposals
-    # print(np.array(proposals)[:3])
-    # post_proposals = post_processing(proposals, local_proposals, local_proposals_scores, gt, num_frames, duration, ori_cum_scores, ori_scores) ### Refinement
-    # print(post_proposals[:3])
-    np.set_printoptions(precision=4, suppress=True)
-    # print(post_proposals)
-    post_proposals = select_proposal(np.array(post_proposals))
-    # print(post_proposals)
-    # print(gt, duration)
-    # print('===================================')
-    return post_proposals
+    proposals_my = select_proposal2(proposals, ori_scores, stride)
+    proposals_my = proposals_my / num_frames * duration
+    return proposals_my
+    # import pdb;pdb.set_trace()
+    # proposals[:,:2] = proposals[:,:2] / num_frames * duration
+    # post_proposals = proposals
+    # np.set_printoptions(precision=4, suppress=True)
+    # post_proposals = select_proposal(np.array(post_proposals))
+    # return post_proposals
 
