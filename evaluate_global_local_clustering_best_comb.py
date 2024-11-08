@@ -32,17 +32,12 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     recall = np.array([0, 0, 0])
     max_recall = np.array([0, 0, 0])
     best_miou = 0
-    # best_high = 1
-    # best_low = 1
-    # high_list = np.linspace(1, 2, 11)
-    # low_list = np.linspace(0, 1, 11)
-    best_ths = 0
-    ths_list = np.linspace(0, 0.9, 10)
+    best_cand_num = 3
 
     # 그리드 서치를 위한 파라미터 범위
     cand_nums = [5, 6, 7, 8, 9, 10, 11, 12]
 
-    for current_ths in ths_list:
+    for current_cand_num in cand_nums:
         pbar = tqdm(data.items())
         for vid, ann in pbar:
             duration = ann['duration']
@@ -74,12 +69,12 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
         current_miou = sum(ious) / len(ious) if len(ious) > 0 else 0
         if current_miou > best_miou:
             best_miou = current_miou
-            best_ths = current_ths
-        print(f'mIoU - {current_ths}: {current_miou}')
+            best_cand_num = current_cand_num
+        print(f'mIoU - {current_cand_num}: {current_miou}')
 
     # 최적의 조합 출력
     print('Best mIoU:', best_miou)
-    print('Best Ths:', best_ths)
+    print('Best Alpha:', best_cand_num)
 
 def eval(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     ious = []
