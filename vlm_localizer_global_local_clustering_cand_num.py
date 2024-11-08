@@ -596,11 +596,11 @@ def localize(video_feature, duration, query_json, stride, max_stride, cand_num):
             dynamic_pred = np.array([0.0, 0.0, 0.0])
             scores = np.array([1.0, 1.0, 1.0])
         else:
-            static_pred = proposals[0]
-            dynamic_pred = pre_proposals[0]
+            static_pred = proposals[0][:cand_num]
+            dynamic_pred = pre_proposals[0][:cand_num]
             # scores = gmm_scores[:10]
             # scores = scores / scores.max()
-            scores = scores[0]
+            scores = scores[0][:cand_num]
             scores = scores / scores.max()
 
 

@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from lavis.models import load_model_and_preprocess
 from torchvision import transforms
 from llm_prompting import select_proposal
+from sklearn.metrics import silhouette_score, davies_bouldin_score
 
 model, vis_processors, text_processors = load_model_and_preprocess("blip2_image_text_matching", "coco", device='cuda',
                                                                    is_eval=True)
@@ -115,6 +116,7 @@ def split_interval(init_timestep):
     ranges.append([start, end])
     return torch.tensor(ranges)
 
+
 def calc_scores_with_indices(video_features, sentences, indices):
     with torch.no_grad():
         text = model.tokenizer(sentences, padding='max_length', truncation=True, max_length=35, return_tensors="pt").to('cuda')
@@ -130,6 +132,28 @@ def calc_scores_with_indices(video_features, sentences, indices):
     scores = scores.mean(dim=0, keepdim=True)
 
     return scores
+
+
+def optimal_k_selection(features, k_range=(2, 6)):
+    best_k = k_range[0]
+    best_score = -1  # 초기화
+    best_labels = None
+
+    for k in range(k_range[0], k_range[1] + 1):
+        kmeans = KMeans(n_clusters=k, n_init=10, random_state=42)
+        labels = kmeans.fit_predict(features)
+        
+        # 실루엣 점수 계산
+        score = silhouette_score(features, labels)
+        
+        # 최적의 점수와 k를 업데이트
+        if score > best_score:
+            best_score = score
+            best_k = k
+            best_labels = labels  # 최적의 k에 대한 클러스터링 결과 저장
+            
+    return best_k, best_labels
+
 
 def calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma=0.4):
     num_frames = video_features.shape[0]
@@ -261,39 +285,18 @@ def calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma
     selected_video_time_features_global = smoothed_selected_video_time_features_global[0]
     #### 비디오 프레임 벡터 스무딩 (글로벌)
 
-    #### 비디오 프레임 벡터 스무딩 (로컬)
-    smooth_kernel_size = 21
-    smooth_padding = smooth_kernel_size // 2
-    padding_selected_video_time_features_local = torch.cat((selected_video_time_features[0].repeat(smooth_padding, 1),
-                                                      selected_video_time_features,
-                                                      selected_video_time_features[-1].repeat(smooth_padding, 1)),
-                                                     dim=0)
-    kernel = torch.ones(padding_selected_video_time_features_local.shape[1], 1,
-                        smooth_kernel_size).cuda() / smooth_kernel_size
-    padding_selected_video_time_features_local = padding_selected_video_time_features_local.unsqueeze(0).permute(0, 2, 1)  # (1, 257, 104)
-    smoothed_selected_video_time_features_local = F.conv1d(padding_selected_video_time_features_local, kernel, padding=0,
-                                                     groups=padding_selected_video_time_features_local.shape[1])
-    smoothed_selected_video_time_features_local = smoothed_selected_video_time_features_local.permute(0, 2, 1)
-    selected_video_time_features_local = smoothed_selected_video_time_features_local[0]
-    selected_video_time_features_local_v2 = F.normalize(selected_video_time_features_local[:,:256], dim=1)
-
     #### K-means 클러스터링 적용 (글로벌)
-    kmeans_k = 4  ### 4
-    if num_frames < kmeans_k:
-        kmeans_k = 2
-    kmeans = KMeans(n_clusters=kmeans_k, n_init=10, random_state=42)
-    kmeans_labels_global = kmeans.fit_predict(np.array(selected_video_time_features_global.cpu()))
+    # kmeans_k = 4  ### 4
+    # if num_frames < kmeans_k:
+    #     kmeans_k = 2
+    # kmeans = KMeans(n_clusters=kmeans_k, n_init=10, random_state=42)
+    # kmeans_labels_global = kmeans.fit_predict(np.array(selected_video_time_features_global.cpu()))
+    # kmeans_labels_global = torch.tensor(kmeans_labels_global)
+
+    features_global = np.array(selected_video_time_features_global.cpu())
+    optimal_k_global, kmeans_labels_global = optimal_k_selection(features_global)
     kmeans_labels_global = torch.tensor(kmeans_labels_global)
     #### K-means 클러스터링 적용 (글로벌)
-
-    #### K-means 클러스터링 적용 (로컬)
-    kmeans_k = 4  ### 4
-    if num_frames < kmeans_k:
-        kmeans_k = 2
-    kmeans = KMeans(n_clusters=kmeans_k, n_init=10, random_state=42)
-    kmeans_labels_local = kmeans.fit_predict(np.array(selected_video_time_features_local.cpu()))
-    kmeans_labels_local = torch.tensor(kmeans_labels_local)
-    #### K-means 클러스터링 적용 (로컬)
 
     #### (글로벌) 클러스터링 결과에 따라 묶음 만들기
     global_proposals = []
@@ -312,24 +315,6 @@ def calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma
     global_proposals_scores.append(round(score, 4))
     global_proposals.append([num_frames, num_frames])
     #### (글로벌) 클러스터링 결과에 따라 묶음 만들기
-
-    #### (로컬) 클러스터링 결과에 따라 묶음 만들기
-    local_proposals = []
-    local_proposals_scores = []
-    start_idx = 0
-    current_val = kmeans_labels_local[0]
-    for i in range(1, num_frames):
-        if kmeans_labels_local[i] != current_val:
-            local_proposals.append([start_idx, i])  ### start_idx 이상, i 미만 까지 같은 레이블
-            score = extract_static_score(start_idx, i, cum_scores, num_frames, scores).item()
-            local_proposals_scores.append(round(score, 4))
-            start_idx = i
-            current_val = kmeans_labels_local[i]
-    local_proposals.append([start_idx, num_frames])
-    score = extract_static_score(start_idx, i, cum_scores, num_frames, scores).item()
-    local_proposals_scores.append(round(score, 4))
-    local_proposals.append([num_frames, num_frames])
-    #### (로컬) 클러스터링 결과에 따라 묶음 만들기
 
     ### (글로벌) Extracting Global Proposals (Cartesian product)
     final_proposals = []
@@ -369,40 +354,9 @@ def calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma
     final_proposals_static = final_proposals[index_static]
     final_proposals_scores_static = final_proposals_scores_static[index_static]
     # final_proposals_importance_scores = final_proposals_importance_scores[index_static]
-
     ### (글로벌) Extracting Global Proposals (Cartesian product)
 
-    return scores, final_proposals_static[:5], final_proposals_scores_static[:5], local_proposals, local_proposals_scores
-
-
-###################### 다른 proposals를 제거한 outer_avg 구하기
-def extract_static_score_reject_other_proposal(inner_mask, outer_mask, scores):
-    if outer_mask.sum() != 0:
-        final_score = (inner_mask * scores).sum() / inner_mask.sum() - (outer_mask * scores).sum() / outer_mask.sum()
-    else:
-        final_score = (inner_mask * scores).sum() / inner_mask.sum()
-    return final_score
-###################### 다른 proposals를 제거한 outer_avg 구하기
-
-
-###################### 중심부로부터 멀어질수록 weight를 적게 주는 gaussian 추가하기
-def extract_static_gaussian_score(start, end, cum_scores, num_frames, scores):
-    kernel_size = end - start
-    if start == 0:
-        inner_sum = cum_scores[end - 1]
-        # inner_sum = scores[:end-1].sum()
-    else:
-        inner_sum = cum_scores[end - 1] - cum_scores[start - 1]
-        # inner_sum = scores[start:end-1].sum()
-    outer_sum = cum_scores[num_frames - 1] - inner_sum
-
-    if kernel_size != num_frames:
-        static_score = inner_sum / kernel_size - outer_sum / (num_frames - kernel_size)
-    else:
-        static_score = inner_sum / kernel_size - (scores[0][0] + scores[0][-1]) / 2  #### 임시방편 느낌
-        # static_score = inner_sum / kernel_size
-    return static_score
-###################### 중심부로부터 멀어질수록 weight를 적게 주는 gaussian 추가하기
+    return scores, final_proposals_static[:5], final_proposals_scores_static[:5]
 
 
 def extract_static_score(start, end, cum_scores, num_frames, scores):
@@ -435,7 +389,7 @@ def extract_avg_score(start, end, cum_scores, num_frames, scores):
 def generate_proposal(video_features, sentences, masked_sentences, gt, duration, stride, max_stride, gamma=0.4, nms_thresh=0.3):
     num_frames = video_features.shape[0]
     ground_truth = [round(gt[0] / duration * num_frames, 0), round(gt[1] / duration * num_frames, 0)]
-    scores, final_proposals, final_proposals_scores, local_proposals, local_proposals_scores = calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma)
+    scores, final_proposals, final_proposals_scores = calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma)
     cum_scores = torch.cumsum(scores, dim=1)[0]
 
     masks = (scores > 0.2).float()
@@ -462,130 +416,7 @@ def generate_proposal(video_features, sentences, masked_sentences, gt, duration,
     final_scores, sort_idx = final_scores.sort(descending=True)
     final_proposals = final_proposals[sort_idx]
     final_prefix = final_prefix[sort_idx]
-    return [final_proposals], [final_scores], [final_prefix], scores, cum_scores, local_proposals, local_proposals_scores, num_frames
-
-def post_processing(proposals, local_proposals, local_proposals_scores, gt, num_frames, duration, cum_scores, scores):
-    ######### Refinement Global Proposals
-    proposals[:,:2] = proposals[:,:2] * num_frames / duration
-    post_proposals_start = []
-    post_proposals_end = []
-    for i in range(len(proposals)):
-        post_proposals_start.append(int(proposals[i][0]))
-        post_proposals_end.append(int(proposals[i][1]))
-        for j in range(len(local_proposals)-1):
-            if proposals[i][0] == local_proposals[j][0]:
-                if proposals[i][1] < local_proposals[j][1]:
-                    post_proposals_start.append(proposals[i][0])
-                    post_proposals_end.append(local_proposals[i][1])
-                if proposals[i][1] == local_proposals[j][1]:
-                    post_proposals_start.append(proposals[i][0])
-                    post_proposals_end.append(proposals[i][1])
-                if proposals[i][1] > local_proposals[j][1] and proposals[i][1] < local_proposals[j + 1][1]:
-                    post_proposals_start.append(proposals[i][0])
-                    post_proposals_end.append(local_proposals[j][1])
-
-                    post_proposals_start.append(proposals[i][0])
-                    post_proposals_end.append(local_proposals[j + 1][1])
-
-            if proposals[i][0] > local_proposals[j][0] and proposals[i][0] < local_proposals[j+1][0]:
-                for k in range(j, len(local_proposals)-1):
-                    if proposals[i][1] > local_proposals[k][0] and proposals[i][1] < local_proposals[k + 1][0]:
-                        post_proposals_start.append(local_proposals[k][0])
-                        post_proposals_start.append(local_proposals[k][0])
-                        post_proposals_start.append(local_proposals[k + 1][0])
-                        post_proposals_start.append(local_proposals[k + 1][0])
-                        post_proposals_end.append(local_proposals[k][0])
-                        post_proposals_end.append(local_proposals[k+1][0])
-                        post_proposals_end.append(local_proposals[k][0])
-                        post_proposals_end.append(local_proposals[k+1][0])
-                    if proposals[i][1] == local_proposals[k][0]:
-                        post_proposals_start.append(local_proposals[k][0])
-                        post_proposals_start.append(local_proposals[k + 1][0])
-                        post_proposals_end.append(local_proposals[k][0])
-                        post_proposals_end.append(local_proposals[k][0])
-
-    post_proposals_start = torch.tensor(post_proposals_start, dtype=torch.int).unsqueeze(1)
-    post_proposals_end = torch.tensor(post_proposals_end, dtype=torch.int).unsqueeze(1)
-    # try:
-    post_proposals = torch.cat((post_proposals_start, post_proposals_end), dim=1)
-    # except RuntimeError:
-    #     import pdb; pdb.set_trace()
-    #     pass
-    ######### Refinement Global Proposals
-
-    ######## 중복인 애들 및 이상한 애들 제거
-    post_final_proposals = torch.unique(post_proposals, dim=0)
-    count = 0
-    len_proposals = len(post_final_proposals)
-    while count < len_proposals:
-        if post_final_proposals[count][0] >= post_final_proposals[count][1]:
-            post_final_proposals = torch.cat((post_final_proposals[:count], post_final_proposals[count+1:]), dim=0)
-            len_proposals -= 1
-            count -= 1
-        count += 1
-    if post_final_proposals[-1][0] == num_frames:
-        post_final_proposals = post_final_proposals[:-1]
-    # print(post_final_proposals)
-    ######## 중복인 애들 및 이상한 애들 제거
-
-
-    ########## 최종적인 Proposals 고르기
-    #### 공사중
-    # len_post_final_proposals = post_final_proposals.shape[0]
-    # outer_mask = torch.ones(num_frames).cuda()
-    # for i in range(len_post_final_proposals):
-    #     start = post_final_proposals[i][0]
-    #     last = post_final_proposals[i][1]
-    #     outer_mask[start:last] = 0
-    #### 공사중
-
-    len_post_final_proposals = post_final_proposals.shape[0]
-    post_final_proposals_scores = []
-    for i in range(len_post_final_proposals):
-        start = post_final_proposals[i][0]
-        last = post_final_proposals[i][1]
-        score = extract_static_score(start, last, cum_scores, num_frames, scores).item()
-        ##### 공사중
-        # inner_mask = torch.zeros(num_frames).cuda()
-        # inner_mask[start:last] = 1
-        # score = extract_static_score_reject_other_proposal(inner_mask, outer_mask, scores).item()
-        ##### 공사중
-        post_final_proposals_scores.append(round(score, 4))
-
-    post_final_proposals_scores = torch.tensor(post_final_proposals_scores)
-    value, index = post_final_proposals_scores.sort(descending=True)
-    post_final_proposals = post_final_proposals[index]
-    post_final_proposals_scores = post_final_proposals_scores[index].unsqueeze(1)
-    ############
-    # print(torch.tensor(proposals)[:5,:2].to(torch.int)) ### 공사중
-    # print(post_final_proposals[:5]) ### 공사중
-    # print(torch.tensor(proposals)[:,:2].to(torch.int))
-    # print(post_final_proposals)
-    # print(post_final_proposals_scores)
-    # print("gt: ", round(gt[0] * num_frames / duration, 0), round(gt[1] * num_frames / duration, 0)) ### 공사중
-    ############
-    ########## 최종적인 Proposals 고르기
-
-
-    post_final_proposals = post_final_proposals[:5]
-    post_final_proposals = post_final_proposals / num_frames * duration
-    post_final_proposals_scores = post_final_proposals_scores[:5]
-    if post_final_proposals_scores.min() < 0:
-        post_final_proposals_scores = post_final_proposals_scores + (-post_final_proposals_scores.min() + 1e-4)
-    post_final_proposals_scores = post_final_proposals_scores / post_final_proposals_scores.max()
-
-    post_final_proposals_total = torch.cat((post_final_proposals, post_final_proposals_scores), dim=1)
-    ######
-    # for i in range(len(proposals)):
-    #     print(proposals[i])
-    #
-    # for i in range(len(post_final_proposals_total)):
-    #     print(post_final_proposals[i], post_final_proposals_scores[i])
-    # print(f'ground truth: {gt[0]} ~ {gt[1]}')
-    # import pdb; pdb.set_trace()
-    ######
-    # post_final_proposals_total[:,:2] = post_final_proposals_total[:,:2] / num_frames * duration
-    return np.array(post_final_proposals_total)
+    return [final_proposals], [final_scores], [final_prefix], scores, cum_scores, num_frames
 
 
 def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num=5):
@@ -594,7 +425,7 @@ def localize(video_feature, duration, query_json, stride, max_stride, gamma, can
         # import pdb; pdb.set_trace()
         gt = query['gt']
         duration = query['duration']
-        proposals, scores, pre_proposals, _, _, _, _, num_frames = generate_proposal(video_feature, query['descriptions'], query['masked_descriptions'], gt, duration, stride, max_stride, gamma=gamma)
+        proposals, scores, pre_proposals, _, _, num_frames = generate_proposal(video_feature, query['descriptions'], query['masked_descriptions'], gt, duration, stride, max_stride, gamma=gamma)
 
         if len(proposals[0]) == 0:
             static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])

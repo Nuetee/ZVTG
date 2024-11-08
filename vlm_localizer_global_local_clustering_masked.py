@@ -359,95 +359,6 @@ def generate_proposal_masked(video_features, sentences, masked_sentences, gt, du
     return [final_proposals], [final_scores], [final_prefix], scores, cum_scores, local_proposals, local_proposals_scores, num_frames
 
 
-
-def post_processing(proposals, local_proposals, local_proposals_scores, gt, num_frames, duration, cum_scores, scores):
-    ######### Refinement Global Proposals
-    proposals[:,:2] = proposals[:,:2] * num_frames / duration
-    post_proposals_start = []
-    post_proposals_end = []
-    for i in range(len(proposals)):
-        post_proposals_start.append(int(proposals[i][0]))
-        post_proposals_end.append(int(proposals[i][1]))
-        for j in range(len(local_proposals)-1):
-            if proposals[i][0] == local_proposals[j][0]:
-                if proposals[i][1] < local_proposals[j][1]:
-                    post_proposals_start.append(proposals[i][0])
-                    post_proposals_end.append(local_proposals[i][1])
-                if proposals[i][1] == local_proposals[j][1]:
-                    post_proposals_start.append(proposals[i][0])
-                    post_proposals_end.append(proposals[i][1])
-                if proposals[i][1] > local_proposals[j][1] and proposals[i][1] < local_proposals[j + 1][1]:
-                    post_proposals_start.append(proposals[i][0])
-                    post_proposals_end.append(local_proposals[j][1])
-
-                    post_proposals_start.append(proposals[i][0])
-                    post_proposals_end.append(local_proposals[j + 1][1])
-
-            if proposals[i][0] > local_proposals[j][0] and proposals[i][0] < local_proposals[j+1][0]:
-                for k in range(j, len(local_proposals)-1):
-                    if proposals[i][1] > local_proposals[k][0] and proposals[i][1] < local_proposals[k + 1][0]:
-                        post_proposals_start.append(local_proposals[k][0])
-                        post_proposals_start.append(local_proposals[k][0])
-                        post_proposals_start.append(local_proposals[k + 1][0])
-                        post_proposals_start.append(local_proposals[k + 1][0])
-                        post_proposals_end.append(local_proposals[k][0])
-                        post_proposals_end.append(local_proposals[k+1][0])
-                        post_proposals_end.append(local_proposals[k][0])
-                        post_proposals_end.append(local_proposals[k+1][0])
-                    if proposals[i][1] == local_proposals[k][0]:
-                        post_proposals_start.append(local_proposals[k][0])
-                        post_proposals_start.append(local_proposals[k + 1][0])
-                        post_proposals_end.append(local_proposals[k][0])
-                        post_proposals_end.append(local_proposals[k][0])
-
-    post_proposals_start = torch.tensor(post_proposals_start, dtype=torch.int).unsqueeze(1)
-    post_proposals_end = torch.tensor(post_proposals_end, dtype=torch.int).unsqueeze(1)
-    # try:
-    post_proposals = torch.cat((post_proposals_start, post_proposals_end), dim=1)
-    ######### Refinement Global Proposals
-
-    ######## 중복인 애들 및 이상한 애들 제거
-    post_final_proposals = torch.unique(post_proposals, dim=0)
-    count = 0
-    len_proposals = len(post_final_proposals)
-    while count < len_proposals:
-        if post_final_proposals[count][0] >= post_final_proposals[count][1]:
-            post_final_proposals = torch.cat((post_final_proposals[:count], post_final_proposals[count+1:]), dim=0)
-            len_proposals -= 1
-            count -= 1
-        count += 1
-    if post_final_proposals[-1][0] == num_frames:
-        post_final_proposals = post_final_proposals[:-1]
-    ######## 중복인 애들 및 이상한 애들 제거
-
-
-    ########## 최종적인 Proposals 고르기
-    len_post_final_proposals = post_final_proposals.shape[0]
-    post_final_proposals_scores = []
-    for i in range(len_post_final_proposals):
-        start = post_final_proposals[i][0]
-        last = post_final_proposals[i][1]
-        score = extract_static_score(start, last, cum_scores, num_frames, scores).item()
-        post_final_proposals_scores.append(round(score, 4))
-
-    post_final_proposals_scores = torch.tensor(post_final_proposals_scores)
-    value, index = post_final_proposals_scores.sort(descending=True)
-    post_final_proposals = post_final_proposals[index]
-    post_final_proposals_scores = post_final_proposals_scores[index].unsqueeze(1)
-    ########## 최종적인 Proposals 고르기
-
-
-    post_final_proposals = post_final_proposals[:5]
-    post_final_proposals = post_final_proposals / num_frames * duration
-    post_final_proposals_scores = post_final_proposals_scores[:5]
-    if post_final_proposals_scores.min() < 0:
-        post_final_proposals_scores = post_final_proposals_scores + (-post_final_proposals_scores.min() + 1e-4)
-    post_final_proposals_scores = post_final_proposals_scores / post_final_proposals_scores.max()
-
-    post_final_proposals_total = torch.cat((post_final_proposals, post_final_proposals_scores), dim=1)
-    return np.array(post_final_proposals_total)
-
-
 def localize(video_feature, duration, query_json, stride, max_stride, high=1.1, low=0.7):
     answer = []
     for query in query_json:
@@ -483,7 +394,6 @@ def localize(video_feature, duration, query_json, stride, max_stride, high=1.1, 
     proposals = np.array(proposals)
     proposals[:,:2] = proposals[:,:2] / num_frames * duration
     post_proposals = proposals
-    # print(np.array(proposals)[:3])
-    # post_proposals = post_processing(proposals, local_proposals, local_proposals_scores, gt, num_frames, duration, ori_cum_scores, ori_scores) ### Refinement
+
     post_proposals = select_proposal(np.array(post_proposals))
     return post_proposals
