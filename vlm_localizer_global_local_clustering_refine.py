@@ -2,15 +2,16 @@ import os
 from tqdm import tqdm
 import torch
 import numpy as np
-from scipy.optimize import minimize_scalar
-from scipy.stats import boxcox
 import torch.nn.functional as F
 from lavis.models import load_model_and_preprocess
 from torchvision import transforms
 from llm_prompting import select_proposal
+from sklearn.metrics import silhouette_score, davies_bouldin_score
 
 model, vis_processors, text_processors = load_model_and_preprocess("blip2_image_text_matching", "coco", device='cuda',
                                                                    is_eval=True)
+# model, vis_processors, text_processors = load_model_and_preprocess("clip_feature_extractor", model_type="ViT-L-14", device='cuda', is_eval=True) ### CLIP
+
 vis_processors = transforms.Compose([
     t for t in vis_processors['eval'].transform.transforms if not isinstance(t, transforms.ToTensor)
 ])
@@ -115,26 +116,11 @@ def split_interval(init_timestep):
     ranges.append([start, end])
     return torch.tensor(ranges)
 
-def calc_scores_with_indices(video_features, sentences, indices):
-    with torch.no_grad():
-        text = model.tokenizer(sentences, padding='max_length', truncation=True, max_length=35, return_tensors="pt").to('cuda')
-              
-        text_output = model.Qformer.bert(text.input_ids, attention_mask=text.attention_mask, return_dict=True)
-        text_feat = model.text_proj(text_output.last_hidden_state[:,0,:])
-    
-    v1 = F.normalize(text_feat, dim=-1)
-    v2 = F.normalize(torch.tensor(video_features, device='cuda', dtype=v1.dtype), dim=-1)
-    # 텍스트와 비디오 특징 간의 내적(유사도) 계산
-    scores = torch.einsum('md,npd->mnp', v1, v2)
-    scores = scores.gather(-1, indices.unsqueeze(-1)).squeeze(-1)
-    scores = scores.mean(dim=0, keepdim=True)
-
-    return scores
-
-def calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma=0.4):
+def calc_scores(video_features, sentences, gt, duration):
     num_frames = video_features.shape[0]
     gt = torch.round(torch.tensor(gt) / torch.tensor(duration) * num_frames).to(torch.int)
     with torch.no_grad():
+        # print(sentences)
         text = model.tokenizer(sentences, padding='max_length', truncation=True, max_length=35, return_tensors="pt").to(
             'cuda')
         text_output = model.Qformer.bert(text.input_ids, attention_mask=text.attention_mask, return_dict=True)
@@ -144,101 +130,11 @@ def calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma
     scores = torch.einsum('md,npd->mnp', v1, v2)
     scores, scores_idx = scores.max(dim=-1)
     scores = scores.mean(dim=0, keepdim=True)
-
-    #### score distribution normalization ####
-    device = scores.device
-    data = scores.flatten().cpu().numpy()
-    # 작은 상수 추가로 양수 데이터 보장
-    epsilon = 1e-6
-    data = data + abs(data.min()) + epsilon if np.any(data <= 0) else data
-    
-    def boxcox_transformed(x, lmbda):
-        if lmbda == 0:
-            return np.log(x)
-        else:
-            return (x**lmbda - 1) / lmbda
-
-    # 최적의 lambda를 찾기 위한 로그 가능도 함수 (최소화할 함수)
-    def neg_log_likelihood(lmbda):
-        transformed_data = boxcox_transformed(data, lmbda)
-        # 분산 계산 시 overflow 방지
-        var = np.var(transformed_data, ddof=1)
-        return -np.sum(np.log(np.abs(transformed_data))) + 0.5 * len(data) * np.log(var)
-
-    result = minimize_scalar(neg_log_likelihood, bounds=(-2, 2), method='bounded')
-    best_lambda = result.x
-    transformed_data = boxcox_transformed(data, best_lambda)
-
-    original_min, original_max = data.min(), data.max()
-    transformed_min, transformed_max = transformed_data.min(), transformed_data.max()
-    transformed_data = (transformed_data - transformed_min) / (transformed_max - transformed_min)  # normalize to [0, 1]
-    
-    is_scale = False
-    if original_max - original_min > gamma:
-        is_scale = True
-        transformed_data = transformed_data * (original_max - original_min) + original_min  # scale to original min/max
-    else:
-        transformed_data = transformed_data * (gamma) + original_min
-    scores = torch.tensor(transformed_data, device=device).reshape(scores.shape)
-    #### score distribution normalization ####
+    ##### scores normalization
+    # scores = (scores - scores.min()) / (scores.max() - scores.min())
+    ##### scores normalization
 
     cum_scores = torch.cumsum(scores, dim=1)[0]
-
-    #### masked importance scores calcualtion ####
-    masked_query_scores = []
-    for masked_element, masked_queries in masked_sentences.items():
-        if "prepositional" in masked_element or "subject" in masked_element or "object" in masked_element:
-            continue
-        for masked_query in masked_queries:
-            if len(masked_query) == 0:
-                continue
-            masked_query_score = calc_scores_with_indices(video_features, [masked_query], scores_idx)
-            #### score distribution normalization ####
-            device = masked_query_score.device
-            data = masked_query_score.flatten().cpu().numpy()
-            # 작은 상수 추가로 양수 데이터 보장
-            epsilon = 1e-6
-            data = data + abs(data.min()) + epsilon if np.any(data <= 0) else data
-            
-            def boxcox_transformed(x, lmbda):
-                if lmbda == 0:
-                    return np.log(x)
-                else:
-                    return (x**lmbda - 1) / lmbda
-
-            # 최적의 lambda를 찾기 위한 로그 가능도 함수 (최소화할 함수)
-            def neg_log_likelihood(lmbda):
-                transformed_data = boxcox_transformed(data, lmbda)
-                # 분산 계산 시 overflow 방지
-                var = np.var(transformed_data, ddof=1)
-                return -np.sum(np.log(np.abs(transformed_data))) + 0.5 * len(data) * np.log(var)
-
-            result = minimize_scalar(neg_log_likelihood, bounds=(-2, 2), method='bounded')
-            best_lambda = result.x
-            transformed_data = boxcox_transformed(data, best_lambda)
-            # transformed_data = boxcox(transformed_data, lmbda=best_lambda)
-            original_min, original_max = data.min(), data.max()
-            transformed_min, transformed_max = transformed_data.min(), transformed_data.max()
-            transformed_data = (transformed_data - transformed_min) / (transformed_max - transformed_min)  # normalize to [0, 1]
-            if is_scale:
-                transformed_data = transformed_data * (original_max - original_min) + original_min  # scale to original min/max
-            else:
-                transformed_data = transformed_data * (gamma) + original_min
-            masked_query_score = torch.tensor(transformed_data, device=device).reshape(masked_query_score.shape)
-            masked_query_scores.append(masked_query_score)
-   
-    importance_scores_list = []
-    for masked_query_score in masked_query_scores:
-        importance_scores = 1 - masked_query_score / scores
-        importance_scores_list.append(importance_scores)
-    if len(masked_query_scores) == 0:
-        importance_scores = torch.ones_like(scores)
-    else:
-        importance_scores_tensor = torch.stack(importance_scores_list, dim=0)
-        importance_scores =  torch.amax(importance_scores_tensor, dim=0)
-        # importance_scores = importance_scores_tensor.mean(dim=0) # 2D 텐서로 변환
-    cum_importance_scores = torch.cumsum(importance_scores, dim=1)[0]
-    #### masked importance scores calcualtion ####
 
     scores_idx = scores_idx.reshape(-1)
     video_features = torch.tensor(video_features).cuda()
@@ -311,7 +207,15 @@ def calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma
     score = extract_static_score(start_idx, i, cum_scores, num_frames, scores).item()
     global_proposals_scores.append(round(score, 4))
     global_proposals.append([num_frames, num_frames])
+    ###### important debug
+    # for i in range(len(global_proposals)-1):
+    #     print(global_proposals[i], global_proposals_scores[i])
+    # print(f'ground truth: {gt[0]} ~ {gt[1]}')
+    # import pdb; pdb.set_trace()
+    ###### important debug
     #### (글로벌) 클러스터링 결과에 따라 묶음 만들기
+
+
 
     #### (로컬) 클러스터링 결과에 따라 묶음 만들기
     local_proposals = []
@@ -329,14 +233,18 @@ def calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma
     score = extract_static_score(start_idx, i, cum_scores, num_frames, scores).item()
     local_proposals_scores.append(round(score, 4))
     local_proposals.append([num_frames, num_frames])
+    ###### important debug
+    # for i in range(len(local_proposals)):
+    #     print(local_proposals[i], local_proposals_scores[i])
+    # print(f'ground truth: {gt[0]} ~ {gt[1]}')
+    # import pdb; pdb.set_trace()
+    ###### important debug
     #### (로컬) 클러스터링 결과에 따라 묶음 만들기
 
     ### (글로벌) Extracting Global Proposals (Cartesian product)
     final_proposals = []
     final_proposals_scores_static = []
-    #### masked importance scores calcualtion ####
-    final_proposals_importance_scores = []
-    #### masked importance scores calcualtion ####
+    final_proposals_scores_avg = []
     for i in range(len(global_proposals)):
         for j in range(i + 1, len(global_proposals)):
             start = global_proposals[i][0]
@@ -344,35 +252,217 @@ def calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma
             # if (last - start) > num_frames * 0.5:
             #     continue
             score_static = extract_static_score(start, last, cum_scores, num_frames, scores).item()
-
-            #### masked importance scores calcualtion ####
-            importance_score = extract_static_score(start, last, cum_importance_scores, num_frames, scores).item()
-            final_proposals_importance_scores.append(round(importance_score, 4))
-            #### masked importance scores calcualtion ####
+            score_avg = extract_avg_score(start, last, cum_scores, num_frames, scores).item()
 
             final_proposals.append([start, last])
             final_proposals_scores_static.append(round(score_static, 4))
-
-    final_proposals_scores_static = torch.tensor(final_proposals_scores_static)
-
-    #### masked importance scores calcualtion ####
-    final_proposals_importance_scores = torch.tensor(final_proposals_importance_scores)
-    for idx, importance_score in enumerate(final_proposals_importance_scores):
-        if importance_score > 0:
-            final_proposals_scores_static[idx] *= 1.1
-        else:
-            final_proposals_scores_static[idx] *= 0.7
-    #### masked importance scores calcualtion ####
+            final_proposals_scores_avg.append(round(score_avg, 4))
 
     final_proposals = torch.tensor(final_proposals)
+    final_proposals_scores_static = torch.tensor(final_proposals_scores_static)
     value_static, index_static = final_proposals_scores_static.sort(descending=True)
     final_proposals_static = final_proposals[index_static]
     final_proposals_scores_static = final_proposals_scores_static[index_static]
-    # final_proposals_importance_scores = final_proposals_importance_scores[index_static]
 
+    final_proposals_scores_avg = torch.tensor(final_proposals_scores_avg)
+    value_avg, index_avg = final_proposals_scores_avg.sort(descending=True)
+    final_proposals_avg = final_proposals[index_avg]
+    final_proposals_scores_avg = final_proposals_scores_avg[index_avg]
     ### (글로벌) Extracting Global Proposals (Cartesian product)
-
     return scores, final_proposals_static[:5], final_proposals_scores_static[:5], local_proposals, local_proposals_scores
+
+
+def select_proposal2(inputs, scores, stride, thsh=0.5):
+    weights = inputs[:, -1].clip(min=0)
+    proposals = inputs[:, :-1]
+    proposals = np.round(proposals).astype(int)
+
+    unique_points = np.unique(proposals.flatten())
+
+    # 구간별 점수를 저장할 딕셔너리 초기화
+    interval_scores = {}
+
+    # unique_points를 순회하며 각 인접한 지점으로 구간을 정의
+    for i in range(len(unique_points) - 1):
+        start = unique_points[i].item()
+        end = unique_points[i + 1].item()
+        interval_scores[(start, end)] = 0  # 초기 점수는 0으로 설정
+
+    # 각 구간의 점수를 interval_scores에 합산
+    for idx, proposal in enumerate(proposals):
+        start, end = proposal[0].item(), proposal[1].item()
+        score = weights[idx].item()
+        proposal_length = end - start  # 구간의 길이
+        
+        # interval_scores의 각 구간과 proposal의 구간이 겹치는 경우 점수 합산
+        for interval in interval_scores:
+            interval_start, interval_end = interval
+            
+            # proposal의 구간과 겹치는 부분이 있는지 확인
+            if interval_start >= start and interval_end <= end:
+                interval_scores[interval] += score
+
+
+    min_score = min(interval_scores.values())
+    max_score = max(interval_scores.values())
+    # min-max scaling 적용
+    interval_scores = {interval: (interval_score - min_score) / (max_score - min_score) if max_score > min_score else 0 for interval, interval_score in interval_scores.items()}
+
+    filtered_intervals = [interval for interval, score in interval_scores.items() if score > thsh]
+
+    best_proposal_left, best_proposal_right = None, None
+    # 시작 시간 중 가장 빠른 값과 종료 시간 중 가장 느린 값 찾기
+    if filtered_intervals:
+        earliest_start = min(interval[0] for interval in filtered_intervals)
+        latest_end = max(interval[1] for interval in filtered_intervals)
+        highest_score_interval = max(interval_scores.items(), key=lambda x: x[1])[0]
+        
+        if earliest_start < highest_score_interval[0]:
+            intervals_in_range = [interval for interval in interval_scores if interval[0] >= earliest_start and interval[1] <= highest_score_interval[1]]
+            lowest_score_interval = min(intervals_in_range, key=lambda x: interval_scores[x])
+            scores_lowest_mean = scores[:, lowest_score_interval[0]:lowest_score_interval[1]].mean()
+            scores_left = scores[:, earliest_start:highest_score_interval[0]] - scores_lowest_mean
+
+            masks = (scores_left > 0).float()
+            scores_left = scores_left * masks
+            best_static_score_left = 0
+            best_proposal_left = [highest_score_interval[0], highest_score_interval[0]]
+            for kernel_size in range(stride, scores_left.size(-1)+1, stride): # stride에 따라 다양한 크기의 커널을 사용하여 구간 제안을 생성
+                inner_sum = scores_left[:, scores_left.size(-1) - kernel_size:scores_left.size(-1)].sum()
+                inner_num = masks[:, scores_left.size(-1) - kernel_size:scores_left.size(-1)].sum()
+                outer_sum = (scores_left * masks).sum() - inner_sum
+                outer_num = masks.sum() - inner_num
+                if outer_num != 0:
+                    static_score_left = inner_sum / kernel_size - outer_sum / outer_num
+                else:
+                    static_score_left = inner_sum / kernel_size - 0
+                if static_score_left > best_static_score_left:
+                    best_static_score_left = static_score_left
+                    best_proposal_left = [highest_score_interval[0]-kernel_size, highest_score_interval[0]]
+        
+        if latest_end > highest_score_interval[1]:
+            intervals_in_range = [interval for interval in interval_scores if interval[0] >= highest_score_interval[1] and interval[1] <= latest_end]
+            lowest_score_interval_right = min(intervals_in_range, key=lambda x: interval_scores[x])
+            scores_lowest_mean = scores[:, lowest_score_interval_right[0]:lowest_score_interval_right[1]].mean()
+            scores_right = scores[:, highest_score_interval[1]:latest_end] - scores_lowest_mean
+
+            masks = (scores_right > 0).float()
+            scores_right = scores_right * masks
+            best_static_score_right = 0
+            best_proposal_right = [highest_score_interval[1], highest_score_interval[1]]
+            for kernel_size in range(stride, scores_right.size(-1) + 1, stride):
+                inner_sum = scores_right[:, :kernel_size].sum()
+                inner_num = masks[:, :kernel_size].sum()
+                outer_sum = (scores_right * masks).sum()
+                outer_num = masks.sum() - inner_num
+                if outer_num != 0:
+                    static_score_right = inner_sum / kernel_size - outer_sum / outer_num
+                else:
+                    static_score_right = inner_sum / kernel_size - 0
+                if static_score_right > best_static_score_right:
+                    best_static_score_right = static_score_right
+                    best_proposal_right = [highest_score_interval[1], highest_score_interval[1] + kernel_size]
+        
+        # best_proposal_left와 best_proposal_right가 정의되었는지 확인하고 final_proposal 설정
+        if best_proposal_left and best_proposal_right:
+            final_proposal = [best_proposal_left[0], best_proposal_right[1]]
+        elif best_proposal_left:
+            final_proposal = [best_proposal_left[0], highest_score_interval[1]]
+        elif best_proposal_right:
+            final_proposal = [highest_score_interval[0], best_proposal_right[1]]
+        else:
+            final_proposal = highest_score_interval  # 기본값으로 highest_score_interval 설정
+        
+        final_proposal = np.array([final_proposal])
+    
+    else:
+        sorted_intervals = sorted(interval_scores.items(), key=lambda x: x[1], reverse=True)
+        final_proposal, best_score = sorted_intervals[0]
+        final_proposal = np.array([final_proposal])
+
+    return final_proposal
+
+
+def select_proposal3(inputs, scores, stride, ths=0.5):
+    weights = inputs[:, -1].clip(min=0)
+    proposals = inputs[:, :-1]
+    proposals = np.round(proposals).astype(int)
+
+    unique_points = np.unique(proposals.flatten())
+
+    # 구간별 점수를 저장할 딕셔너리 초기화
+    interval_scores = {}
+
+    # unique_points를 순회하며 각 인접한 지점으로 구간을 정의
+    for i in range(len(unique_points) - 1):
+        start = unique_points[i].item()
+        end = unique_points[i + 1].item()
+        interval_scores[(start, end)] = 0  # 초기 점수는 0으로 설정
+
+    # 각 구간의 점수를 interval_scores에 합산
+    for idx, proposal in enumerate(proposals):
+        start, end = proposal[0].item(), proposal[1].item()
+        score = weights[idx].item()
+        proposal_length = end - start  # 구간의 길이
+        
+        # interval_scores의 각 구간과 proposal의 구간이 겹치는 경우 점수 합산
+        for interval in interval_scores:
+            interval_start, interval_end = interval
+            
+            # proposal의 구간과 겹치는 부분이 있는지 확인
+            if interval_start >= start and interval_end <= end:
+                interval_scores[interval] += score
+
+
+    min_score = min(interval_scores.values())
+    max_score = max(interval_scores.values())
+    # min-max scaling 적용
+    interval_scores = {interval: (interval_score - min_score) / (max_score - min_score) if max_score > min_score else 0 for interval, interval_score in interval_scores.items()}
+
+    filtered_intervals = [interval for interval, score in interval_scores.items() if score > ths]
+    unfiltered_intervals = [interval for interval in interval_scores if interval not in filtered_intervals]
+
+    import pdb;pdb.set_trace()
+    if filtered_intervals:
+        earliest_start = min(interval[0] for interval in filtered_intervals)
+        latest_end = max(interval[1] for interval in filtered_intervals)
+        
+        filtered_scores = scores[:, earliest_start:latest_end]
+        
+        if unfiltered_intervals:
+            highest_unfiltered_interval = max(unfiltered_intervals, key=lambda x: interval_scores[x])
+            highest_unfiltered_scores = scores[:, highest_unfiltered_interval[0]:highest_unfiltered_interval[1]].mean()
+            filtered_scores -= highest_unfiltered_scores
+
+        masks = (filtered_scores > 0).float()
+        filtered_scores = filtered_scores * masks
+
+        flattened_proposals = [] # 제안 구간
+        flattened_scores = [] # 제안 구간에 대한 점수
+        pdb.set_trace()
+        for kernel_size in range(stride, filtered_scores.size(-1)+1, stride): # stride에 따라 다양한 크기의 커널을 사용하여 구간 제안을 생성
+            kernel = torch.ones((1, 1, kernel_size)).to('cuda')
+            inner_sum = F.conv1d(filtered_scores.view(-1, 1, filtered_scores.size(-1)), kernel).view(filtered_scores.size(0), -1)
+            inner_num = F.conv1d(masks.view(-1, 1, masks.size(-1)), kernel).view(masks.size(0), -1)
+            outer_sum = (filtered_scores * masks).sum(dim=-1, keepdim=True) - inner_sum 
+            outer_num = masks.sum(dim=-1, keepdim=True) - inner_num 
+            static_scores = inner_sum / kernel_size - outer_sum / outer_num
+
+            new_proposals = torch.arange(0, static_scores.size(-1)).to('cuda')
+            new_proposals = torch.stack([new_proposals, new_proposals + kernel_size], dim=-1) / filtered_scores.size(-1) # 0 ~ 1 정규화 
+            
+            for idx in range(static_scores.size(0)): # static_scores.size(0) = 1
+                mask = static_scores[idx] > -1e3
+                if idx >= len(flattened_proposals): # for문의 처음 반복
+                    flattened_proposals.append(new_proposals[mask])
+                    flattened_scores.append(static_scores[idx][mask])
+                else: # for문의 나중 반복
+                    flattened_proposals[idx] = torch.concat([flattened_proposals[idx], new_proposals[mask]], dim=0)
+                    flattened_scores[idx] = torch.concat([flattened_scores[idx], static_scores[idx][mask]], dim=0)
+    
+    return flattened_proposals, flattened_scores
+
+
 
 
 ###################### 다른 proposals를 제거한 outer_avg 구하기
@@ -432,29 +522,16 @@ def extract_avg_score(start, end, cum_scores, num_frames, scores):
     return avg_score
 
 
-def generate_proposal(video_features, sentences, masked_sentences, gt, duration, stride, max_stride, gamma=0.4, nms_thresh=0.3):
+def generate_proposal(video_features, sentences, gt, duration, stride, max_stride, nms_thresh=0.3):
     num_frames = video_features.shape[0]
     ground_truth = [round(gt[0] / duration * num_frames, 0), round(gt[1] / duration * num_frames, 0)]
-    scores, final_proposals, final_proposals_scores, local_proposals, local_proposals_scores = calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma)
+    scores, final_proposals, final_proposals_scores, local_proposals, local_proposals_scores = calc_scores(video_features, sentences, gt, duration)
     cum_scores = torch.cumsum(scores, dim=1)[0]
 
     masks = (scores > 0.2).float()
     scores = scores * masks
     stride = min(stride, scores.size(-1) // 2)
-
-    #### dynamic scoring #####
-    dynamic_idxs, dynamic_scores = get_dynamic_scores(scores, stride, masks)
-    dynamic_frames = torch.round(dynamic_idxs * num_frames).int()
-    
-    for final_proposal in final_proposals:
-        current_frame = final_proposal[0]
-        dynamic_prefix = dynamic_frames[0][current_frame]
-        while True:
-            if current_frame == 0 or dynamic_frames[0][current_frame - 1] != dynamic_prefix:
-                break
-            current_frame -= 1
-        final_proposal[0] = current_frame
-    #### dynamic scoring #####
+    # dynamic_idxs, dynamic_scores = get_dynamic_scores(scores, stride, masks)
 
     final_proposals = final_proposals.clone()
     final_scores = final_proposals_scores.clone()
@@ -462,6 +539,9 @@ def generate_proposal(video_features, sentences, masked_sentences, gt, duration,
     final_scores, sort_idx = final_scores.sort(descending=True)
     final_proposals = final_proposals[sort_idx]
     final_prefix = final_prefix[sort_idx]
+    ####### important debug
+    # print(final_proposals.cpu()*num_frames, ground_truth, final_scores, num_frames) ### frame 단위로 통일
+    ####### important debug
     return [final_proposals], [final_scores], [final_prefix], scores, cum_scores, local_proposals, local_proposals_scores, num_frames
 
 def post_processing(proposals, local_proposals, local_proposals_scores, gt, num_frames, duration, cum_scores, scores):
@@ -588,25 +668,27 @@ def post_processing(proposals, local_proposals, local_proposals_scores, gt, num_
     return np.array(post_final_proposals_total)
 
 
-def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num=5):
+def localize(video_feature, duration, query_json, stride, max_stride, ths):
     answer = []
     for query in query_json:
         # import pdb; pdb.set_trace()
         gt = query['gt']
         duration = query['duration']
-        proposals, scores, pre_proposals, _, _, _, _, num_frames = generate_proposal(video_feature, query['descriptions'], query['masked_descriptions'], gt, duration, stride, max_stride, gamma=gamma)
+        proposals, scores, pre_proposals, ori_scores, ori_cum_scores, local_proposals, local_proposals_scores, num_frames = generate_proposal(video_feature, query['descriptions'], gt,
+                                                                         duration, stride, max_stride)
 
         if len(proposals[0]) == 0:
             static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
             dynamic_pred = np.array([0.0, 0.0, 0.0])
             scores = np.array([1.0, 1.0, 1.0])
         else:
-            static_pred = proposals[0][:cand_num]
-            dynamic_pred = pre_proposals[0][:cand_num]
+            static_pred = proposals[0][:5]
+            dynamic_pred = pre_proposals[0][:5]
             # scores = gmm_scores[:10]
             # scores = scores / scores.max()
-            scores = scores[0][:cand_num]
+            scores = scores[0][:10]
             scores = scores / scores.max()
+
 
             # if scores.min() < 0:
             #     scores = scores + (-scores.min() + 1e-4)
@@ -624,12 +706,37 @@ def localize(video_feature, duration, query_json, stride, max_stride, gamma, can
         answer.append(query)
 
     proposals = []
-    for t in range(cand_num): ##################### 건들여봐야해!!! 성준아
-        proposals += [[p['response'][t]['static_start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answer if len(p['response']) > t]  ### only static
-    proposals = np.array(proposals)
-    proposals[:,:2] = proposals[:,:2] / num_frames * duration
-    post_proposals = proposals
-    np.set_printoptions(precision=4, suppress=True)
-    post_proposals = select_proposal(np.array(post_proposals))
+    for t in range(5): ##################### 건들여봐야해!!! 성준아
+        proposals += [[p['response'][t]['static_start'], p['response'][t]['end'], p['response'][t]['confidence']] for p
+                      in answer if len(p['response']) > t]  ### only static
+    
+    
+    ##### refine 1 #####
+    flattened_proposals = np.array(proposals)
+    flattened_proposals, flattened_scores = select_proposal3(proposals, ori_scores, stride, ths)
+    import pdb;pdb.set_trace()
+    if len(flattened_proposals[0]) == 0:
+        static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
+        dynamic_pred = np.array([0.0, 0.0, 0.0])
+        scores = np.array([1.0, 1.0, 1.0])
+    else:
+        static_pred = flattened_proposals[0][:10]
+        scores = flattened_scores[0][:10]
+        scores = flattened_scores / flattened_scores.max()
+
+    # 상위 5개의 점수를 가진 인덱스 찾기
+    k = min(10, scores.numel())  # scores의 크기와 10 중 작은 값을 사용
+    top_k_indices = torch.topk(scores, k).indices
+
+    # 상위 5개의 proposal과 score로 리스트 생성
+    top_k_proposals_scores = [[static_pred[i, 0].item(), static_pred[i, 1].item(), scores[i].item()] for i in top_k_indices]
+    post_proposals = select_proposal(np.array(top_k_proposals_scores))
+    post_proposals *= duration
     return post_proposals
+    ##### refine 1 #####
+
+    # proposals = np.array(proposals)
+    # proposals_my = select_proposal2(proposals, ori_scores, stride, ths)
+    # proposals_my = proposals_my / num_frames * duration
+    # return proposals_my
 
