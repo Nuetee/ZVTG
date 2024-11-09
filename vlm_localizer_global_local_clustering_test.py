@@ -193,7 +193,7 @@ def calc_scores(video_features, sentences, gt, duration):
             global_proposals_scores.append(round(score, 4))
 
              # 구간에 속하는 selected_video_time_features_local의 평균값을 계산하여 centroid 생성
-            centroid = selected_video_time_features_global[start_idx:i].mean(dim=0)
+            centroid = selected_video_time_features_local[start_idx:i].mean(dim=0)
             centroids_local.append(centroid)
 
             start_idx = i
@@ -202,7 +202,7 @@ def calc_scores(video_features, sentences, gt, duration):
     score = extract_static_score(start_idx, i, cum_scores, num_frames, scores).item()
     global_proposals_scores.append(round(score, 4))
     global_proposals.append([num_frames, num_frames])
-    centroid = selected_video_time_features_global[start_idx:num_frames].mean(dim=0)
+    centroid = selected_video_time_features_local[start_idx:num_frames].mean(dim=0)
     centroids_local.append(centroid)
     #### (글로벌) 클러스터링 결과에 따라 묶음 만들기
 
