@@ -230,40 +230,57 @@ def calc_scores(video_features, sentences, gt, duration):
     # import pdb;pdb.set_trace()
 
 
-    # 해당 클러스터의 내부 요소 인덱스 가져오기
-    internal_indices = sorted([i for interval in cluster_elements[max_cluster_idx] for i in interval])
+    # # 해당 클러스터의 내부 요소 인덱스 가져오기
+    # internal_indices = sorted([i for interval in cluster_elements[max_cluster_idx] for i in interval])
 
-    # 비연속적인 경계 찾기
-    boundaries = []
-    start = internal_indices[0]
+    # # 비연속적인 경계 찾기
+    # boundaries = []
+    # start = internal_indices[0]
 
-    for i in range(1, len(internal_indices)):
-        if internal_indices[i] != internal_indices[i - 1] + 1:  # 연속되지 않는 경우 경계로 간주
-            boundaries.append([start, internal_indices[i - 1]])  # 연속 구간의 시작과 끝 추가
-            start = internal_indices[i]  # 새로운 구간 시작
+    # for i in range(1, len(internal_indices)):
+    #     if internal_indices[i] != internal_indices[i - 1] + 1:  # 연속되지 않는 경우 경계로 간주
+    #         boundaries.append([start, internal_indices[i - 1]])  # 연속 구간의 시작과 끝 추가
+    #         start = internal_indices[i]  # 새로운 구간 시작
 
-    # 마지막 구간 추가
-    boundaries.append([start, internal_indices[-1]])
+    # # 마지막 구간 추가
+    # boundaries.append([start, internal_indices[-1]])
 
 
-    combined_proposals = []
-    combined_proposals_static_score = []
-    # boundaries에 있는 시작-끝 구간 조합 생성
-    for i in range(len(boundaries)):
-        start = boundaries[i][0]  # i번째 구간의 시작점
-        for j in range(i, len(boundaries)):
-            end = boundaries[j][1]  # j번째 구간의 끝점
-            if start < end:  # 시작점이 끝점보다 앞에 있는 경우에만 추가
-                combined_proposals.append([start, end])
-                static_score = extract_static_score(start, end, cum_scores, num_frames, scores).item()
-                combined_proposals_static_score.append(static_score)
+    # combined_proposals = []
+    # combined_proposals_static_score = []
+    # # boundaries에 있는 시작-끝 구간 조합 생성
+    # for i in range(len(boundaries)):
+    #     start = boundaries[i][0]  # i번째 구간의 시작점
+    #     for j in range(i, len(boundaries)):
+    #         end = boundaries[j][1]  # j번째 구간의 끝점
+    #         if start < end:  # 시작점이 끝점보다 앞에 있는 경우에만 추가
+    #             combined_proposals.append([start, end])
+    #             static_score = extract_static_score(start, end, cum_scores, num_frames, scores).item()
+    #             combined_proposals_static_score.append(static_score)
     
-    combined_proposals = torch.tensor(combined_proposals)
-    combined_proposals_static_score = torch.tensor(combined_proposals_static_score)
-    _, index_static = combined_proposals_static_score.sort(descending=True)
-    combined_proposals = combined_proposals[index_static]
+    # combined_proposals = torch.tensor(combined_proposals)
+    # combined_proposals_static_score = torch.tensor(combined_proposals_static_score)
+    # _, index_static = combined_proposals_static_score.sort(descending=True)
+    # combined_proposals = combined_proposals[index_static]
 
-    return scores, combined_proposals[:5], combined_proposals_static_score[:5]
+    # return scores, combined_proposals[:5], combined_proposals_static_score[:5]
+
+    # 상위 두 개의 cluster_static_score를 가진 클러스터 찾기
+    top_two_clusters = torch.topk(torch.tensor(cluster_static_scores), 2).indices.tolist()
+
+    # 두 클러스터의 모든 요소 포함하는 전체 구간 계산
+    all_indices = sorted(set(
+        i for cluster_idx in top_two_clusters for interval in cluster_elements[cluster_idx] for i in interval
+    ))
+    start = all_indices[0]  # 전체 시작 지점
+    end = all_indices[-1]   # 전체 끝 지점
+
+    # 최종 반환값 생성 (형태 유지)
+    combined_proposals = torch.tensor([[start, end]])  # 단일 시작-끝 구간으로 반환
+    combined_proposals_static_score = torch.tensor([cluster_static_scores[top_two_clusters[0]], cluster_static_scores[top_two_clusters[1]]])
+
+    # 결과 반환 (기존 반환값 형태 유지)
+    return scores, combined_proposals, torch.tensor([0])
     # return scores, final_proposals[:5], final_proposals_scores[:5], local_proposals, local_proposals_scores ############### 잘되는놈 공사 이전
 
 

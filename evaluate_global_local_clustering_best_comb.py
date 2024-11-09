@@ -34,7 +34,7 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     best_miou = 0
 
     # 그리드 서치를 위한 파라미터 범위
-    score_mean_window_sizes = [3,5,7,9,11,13,15,17,19,21]
+    score_mean_window_sizes = [3,5,7,9,11,13,15]
 
     for current_window_size in score_mean_window_sizes:
         pbar = tqdm(data.items())

@@ -24,9 +24,16 @@ def calc_iou(candidates, gt):
     union = np.maximum(end, e) - np.minimum(start, s)
     return inter.clip(min=0) / union
 
+def calc_iou2(candidates, gt):
+    start, end = candidates[:,0], candidates[:,1]
+    s, e = gt[0], gt[1]
+    inter = np.minimum(end, e) - np.maximum(start, s)
+    union = e - s
+    return inter.clip(min=0) / union
 
 def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     ious = []
+    pres = []
     max_ious = []
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
@@ -40,9 +47,11 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
         for i in range(len(ann['sentences'])):
             # query
             query_json = [{'descriptions': ann['sentences'][i], 'masked_descriptions': ann['masked'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.4, cand_num=5, high=1.1, low=0.7)
+            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor),gamma=0.4, cand_num=5)
             gt = ann['timestamps'][i]
             iou_ = calc_iou(proposals[:1], gt)[0]
+            pre = calc_iou2(proposals[:1], gt)[0]
+            pres.append(max(pre, 0))
             ious.append(max(iou_, 0))
             recall += thresh <= iou_
 
@@ -57,11 +66,14 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
             ######
 
         # pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
-        pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious)), "max_mIoU": sum(max_ious) / len(max_ious), 'max_recall': str(max_recall / len(max_ious))})
+        # pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious)), "max_mIoU": sum(max_ious) / len(max_ious), 'max_recall': str(max_recall / len(max_ious)), "mPre": sum(pres) / len(pres)})
+        pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious)), "mPre": sum(pres) / len(pres)})
 
     print('mIoU:', sum(ious) / len(ious))
     for th, r in zip(thresh, recall):
         print(f'R@{th}:', r / len(ious))
+    
+    print('mPre:',sum(pres) / len(pres))
 
     print('max_mIoU:', sum(max_ious) / len(max_ious)) #####
     for th, max_r in zip(thresh, max_recall): #####
