@@ -32,8 +32,8 @@ def eval_with_llm(data, feature_path, pad_sec=0.0):
     best_miou = 0
     best_stride = 0
     best_max_stride_factor = 0
-    strides = [20]
-    max_stride_factor_list = [0.5]
+    strides = [10, 20, 30, 40, 50]
+    max_stride_factor_list = [0.25, 0.5, 0.75, 1]
 
     for stride in strides:
         for max_stride_factor in max_stride_factor_list:
