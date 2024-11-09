@@ -49,9 +49,14 @@ def eval_with_llm(data, feature_path, pad_sec=0.0):
                     query_json = [{'descriptions': ann['sentences'][i]}]
                     if stride > int(video_feature.shape[0] * max_stride_factor):
                         stride_ = int(video_feature.shape[0] * max_stride_factor)
+                        max_stride = int(video_feature.shape[0] * max_stride_factor)
                     else:
                         stride_ = stride
-                    answers = localize(video_feature, duration, query_json, stride_, int(video_feature.shape[0] * max_stride_factor))
+                        max_stride = int(video_feature.shape[0] * max_stride_factor)
+                    if int(video_feature.shape[0] * max_stride_factor) == 0:
+                        max_stride = 1
+                        stride_ = 1
+                    answers = localize(video_feature, duration, query_json, stride_, max_stride)
                     proposals = []
                     for t in range(3):
                         proposals += [[p['response'][t]['start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answers if len(p['response']) > t]
