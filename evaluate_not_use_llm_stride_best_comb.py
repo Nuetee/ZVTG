@@ -49,6 +49,8 @@ def eval_with_llm(data, feature_path, pad_sec=0.0):
                 for i in range(len(ann['sentences'])):
                     # sub queries
                     query_json = [{'descriptions': ann['sentences'][i]}]
+                    if stride > int(video_feature.shape[0] * max_stride_factor):
+                        stride = int(video_feature.shape[0] * max_stride_factor)
                     answers = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor))
                     proposals = []
                     for t in range(3):
@@ -82,8 +84,8 @@ def eval_with_llm(data, feature_path, pad_sec=0.0):
     print('Best mIoU:', best_miou)
     for th, r in zip(thresh, best_recall):
         print(f'R@{th}:', r / len(ious))
-    print(f'Best stride: {stride}')
-    print(f'Best max stride factor: {max_stride_factor}')
+    print(f'Best stride: {best_stride}')
+    print(f'Best max stride factor: {best_max_stride_factor}')
 
 if __name__=='__main__':
     args = get_args()
