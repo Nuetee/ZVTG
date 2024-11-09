@@ -40,9 +40,11 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
         duration = ann['duration']
         video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
 
-        for i in range(len(ann['revise_and_replace'])):
+        for i in range(len(ann['sentences'])):
             # sub queries
-            query_json = [{'descriptions': ann['revise_and_replace'][i]["revised_query"][0]}]
+            query_json = [{'descriptions': ann['sentences'][i]}]
+            if stride > int(video_feature.shape[0] * max_stride_factor):
+                stride = int(video_feature.shape[0] * max_stride_factor) - 1
             answers = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor))
             proposals = []
             for t in range(3):
@@ -52,9 +54,9 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
 
             # select_proposal은 각 proposal에 대해서, ((자기 자신과 다른 proposal과의 겹침 정도)^gamma * 다른 proposal의 score)의 합을 계산하여 정렬됨. 따라서, 점수가 높은 proposal과 많이 겹칠수록 높은 점수를 가짐
             
-            # proposals = select_proposal(np.array(proposals))
+            proposals = select_proposal(np.array(proposals))
             # toy
-            proposals = np.array(proposals)
+            # proposals = np.array(proposals)
             # toy
             gt = ann['timestamps'][i]
             # toy

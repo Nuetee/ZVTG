@@ -750,33 +750,35 @@ def localize(video_feature, duration, query_json, stride, max_stride):
     for query in query_json:
         proposals, scores, pre_proposals, ori_scores = generate_proposal(video_feature, query['descriptions'], stride, max_stride)
         # proposals, scores, pre_proposals, ori_scores = generate_proposal_my(video_feature, query['descriptions'], stride, max_stride, outer_ratio=2)
-
-        if len(proposals[0]) == 0:
-            static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
-            dynamic_pred = np.array([0.0, 0.0, 0.0])
-            scores = np.array([1.0, 1.0, 1.0])
-        else:
-            static_pred = proposals[0][:10] * duration
-            dynamic_pred = pre_proposals[0][:10] * duration
-            scores = scores[0][:10]
-            # description별로 정규화. 이렇게하면 최대 점수를 갖는 구간이 하나의 쿼리에 대해 4개씩(원본 + description 3개) 나옴
-            scores = scores / scores.max()
-        query['response'] = []
-        for i in range(len(static_pred)):
-            query['response'].append({
-                'start': float(static_pred[i][0]),
-                'static_start': float(static_pred[i][0]),
-                'end': float(static_pred[i][1]),
-                'confidence': float(scores[i])
-            })
-        answer.append(query)
+        try:
+            if len(proposals[0]) == 0:
+                static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
+                dynamic_pred = np.array([0.0, 0.0, 0.0])
+                scores = np.array([1.0, 1.0, 1.0])
+            else:
+                static_pred = proposals[0][:10] * duration
+                dynamic_pred = pre_proposals[0][:10] * duration
+                scores = scores[0][:10]
+                # description별로 정규화. 이렇게하면 최대 점수를 갖는 구간이 하나의 쿼리에 대해 4개씩(원본 + description 3개) 나옴
+                scores = scores / scores.max()
+            query['response'] = []
+            for i in range(len(static_pred)):
+                query['response'].append({
+                    'start': float(static_pred[i][0]),
+                    'static_start': float(static_pred[i][0]),
+                    'end': float(static_pred[i][1]),
+                    'confidence': float(scores[i])
+                })
+            answer.append(query)
+        except:
+            import pdb;pdb.set_trace()
     
     return answer
 
 def localize_mod(video_feature, duration, query_json,stride, max_stride):
     answer = []
     for query in query_json:
-        proposals, scores, pre_proposals, ori_scores = generate_proposal_with_replaced(video_feature, query['descriptions'], query['replaced_descriptions'], stride, max_stride)
+        proposals, scores, pre_proposals, ori_scores = generate_proposal(video_feature, query['descriptions'], query['replaced_descriptions'], stride, max_stride)
         if len(proposals[0]) == 0:
             static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
             dynamic_pred = np.array([0.0, 0.0, 0.0])

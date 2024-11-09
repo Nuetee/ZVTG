@@ -30,8 +30,14 @@ def eval_with_llm(data, feature_path, pad_sec=0.0):
     ious = []
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
-    strides = [10, 20, 30, 40, 50]
-    max_stride_factor_list = [0.25, 0.5, 0.75, 1]
+    best_recall = np.array([0, 0, 0])
+    best_miou = 0
+    best_stride = 0
+    best_max_stride_factor = 0
+    # strides = [10, 20, 30, 40, 50]
+    # max_stride_factor_list = [0.25, 0.5, 0.75, 1]
+    strides = [10]
+    max_stride_factor_list = [0.4]
 
     for stride in strides:
         for max_stride_factor in max_stride_factor_list:
@@ -60,10 +66,24 @@ def eval_with_llm(data, feature_path, pad_sec=0.0):
                     recall += thresh <= iou_
 
                 pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
+
+            # mIoU 계산
+            current_miou = sum(ious) / len(ious) if len(ious) > 0 else 0
+            if current_miou > best_miou:
+                best_miou = current_miou
+                best_recall = recall
+                best_stride = stride
+                best_max_stride_factor = max_stride_factor
+            
+            print(f'mIoU - {stride}/{max_stride_factor}: {current_miou}')
+            for th, r in zip(thresh, recall):
+                print(f'R@{th}:', r / len(ious))
     
-    print('mIoU:', sum(ious) / len(ious))
-    for th, r in zip(thresh, recall):
+    print('Best mIoU:', best_miou)
+    for th, r in zip(thresh, best_recall):
         print(f'R@{th}:', r / len(ious))
+    print(f'Best stride: {stride}')
+    print(f'Best max stride factor: {max_stride_factor}')
 
 if __name__=='__main__':
     args = get_args()
