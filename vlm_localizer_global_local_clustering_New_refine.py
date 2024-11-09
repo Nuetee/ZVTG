@@ -223,47 +223,7 @@ def calc_scores(video_features, sentences, gt, duration):
 
     # 가장 큰 cluster_static_score를 가진 클러스터 찾기
     max_cluster_idx = torch.argmax(torch.tensor(cluster_static_scores)).item()
-    # internal_indices = sorted([i for interval in cluster_elements[max_cluster_idx] for i in interval])
-    # new_start = internal_indices[0]
-    # new_end = internal_indices[-1]
-    # new_kmeans_k = len(cluster_elements[max_cluster_idx])
-    # import pdb;pdb.set_trace()
 
-
-    # # 해당 클러스터의 내부 요소 인덱스 가져오기
-    # internal_indices = sorted([i for interval in cluster_elements[max_cluster_idx] for i in interval])
-
-    # # 비연속적인 경계 찾기
-    # boundaries = []
-    # start = internal_indices[0]
-
-    # for i in range(1, len(internal_indices)):
-    #     if internal_indices[i] != internal_indices[i - 1] + 1:  # 연속되지 않는 경우 경계로 간주
-    #         boundaries.append([start, internal_indices[i - 1]])  # 연속 구간의 시작과 끝 추가
-    #         start = internal_indices[i]  # 새로운 구간 시작
-
-    # # 마지막 구간 추가
-    # boundaries.append([start, internal_indices[-1]])
-
-
-    # combined_proposals = []
-    # combined_proposals_static_score = []
-    # # boundaries에 있는 시작-끝 구간 조합 생성
-    # for i in range(len(boundaries)):
-    #     start = boundaries[i][0]  # i번째 구간의 시작점
-    #     for j in range(i, len(boundaries)):
-    #         end = boundaries[j][1]  # j번째 구간의 끝점
-    #         if start < end:  # 시작점이 끝점보다 앞에 있는 경우에만 추가
-    #             combined_proposals.append([start, end])
-    #             static_score = extract_static_score(start, end, cum_scores, num_frames, scores).item()
-    #             combined_proposals_static_score.append(static_score)
-    
-    # combined_proposals = torch.tensor(combined_proposals)
-    # combined_proposals_static_score = torch.tensor(combined_proposals_static_score)
-    # _, index_static = combined_proposals_static_score.sort(descending=True)
-    # combined_proposals = combined_proposals[index_static]
-
-    # return scores, combined_proposals[:5], combined_proposals_static_score[:5]
 
     # 상위 두 개의 cluster_static_score를 가진 클러스터 찾기
     top_two_clusters = torch.topk(torch.tensor(cluster_static_scores), 2).indices.tolist()
