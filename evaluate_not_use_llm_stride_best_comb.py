@@ -27,18 +27,19 @@ def calc_iou(candidates, gt):
 
 
 def eval_with_llm(data, feature_path, pad_sec=0.0):
-    ious = []
-    thresh = np.array([0.3, 0.5, 0.7])
-    recall = np.array([0, 0, 0])
+
     best_recall = np.array([0, 0, 0])
     best_miou = 0
     best_stride = 0
     best_max_stride_factor = 0
-    strides = [10, 20, 30, 40, 50]
-    max_stride_factor_list = [0.25, 0.5, 0.75, 1]
+    strides = [20]
+    max_stride_factor_list = [0.5]
 
     for stride in strides:
         for max_stride_factor in max_stride_factor_list:
+            ious = []
+            thresh = np.array([0.3, 0.5, 0.7])
+            recall = np.array([0, 0, 0])
             pbar = tqdm(data.items())
             for vid, ann in pbar:
                 duration = ann['duration']

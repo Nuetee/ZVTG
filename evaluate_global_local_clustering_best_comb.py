@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import json
 from tqdm import tqdm
-from vlm_localizer_global_local_clustering_Re_integrate_score_mean import localize
+from vlm_localizer_global_local_clustering_Re_integrate import localize
 from qvhhighlight_eval import eval_submission
 import os
 from llm_prompting import select_proposal, filter_and_integrate
@@ -26,55 +26,55 @@ def calc_iou(candidates, gt):
 
 
 def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
-    ious = []
-    max_ious = []
-    thresh = np.array([0.3, 0.5, 0.7])
-    recall = np.array([0, 0, 0])
-    max_recall = np.array([0, 0, 0])
+    best_recall = np.array([0, 0, 0])
     best_miou = 0
 
     # 그리드 서치를 위한 파라미터 범위
-    score_mean_window_sizes = [3,5,7,9,11,13,15]
+    gamma_list = [0, 0.2, 0.4, 0.6, 0.8, 1]
+    cand_num_list = [5, 6, 8, 10, 12]
+    best_gamma = 0
+    best_cand_num = 5
 
-    for current_window_size in score_mean_window_sizes:
-        pbar = tqdm(data.items())
-        for vid, ann in pbar:
-            duration = ann['duration']
-            video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
-            num_frames = video_feature.shape[0]
-            for i in range(len(ann['sentences'])):
-                # query
-                query_json = [{'descriptions': ann['sentences'][i], 'masked_descriptions': ann['masked'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-                proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.4, scores_mean_window_size=current_window_size)
-                gt = ann['timestamps'][i]
-                iou_ = calc_iou(proposals[:1], gt)[0]
-                ious.append(max(iou_, 0))
-                recall += thresh <= iou_
+    for gamma in gamma_list:
+        for cand_num in cand_num_list:
+            ious = []
+            thresh = np.array([0.3, 0.5, 0.7])
+            recall = np.array([0, 0, 0])
+            pbar = tqdm(data.items())
+            for vid, ann in pbar:
+                duration = ann['duration']
+                video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
+                num_frames = video_feature.shape[0]
+                for i in range(len(ann['sentences'])):
+                    # query
+                    query_json = [{'descriptions': ann['sentences'][i], 'masked_descriptions': ann['masked'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
+                    proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma, cand_num)
+                    gt = ann['timestamps'][i]
+                    iou_ = calc_iou(proposals[:1], gt)[0]
+                    ious.append(max(iou_, 0))
+                    recall += thresh <= iou_
 
-                ######
-                max_iou_ = 0
-                for i in range(len(proposals)):
-                    temp_iou_ = calc_iou(proposals[i:i+1], gt)[0]
-                    if temp_iou_ > max_iou_:
-                        max_iou_ = temp_iou_
-                max_ious.append(max(max_iou_, 0))
-                max_recall += thresh <= max_iou_
-                ######
 
-            # pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
-            pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious)), "max_mIoU": sum(max_ious) / len(max_ious), 'max_recall': str(max_recall / len(max_ious))})
+                # pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
+                pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
 
-        # mIoU 계산
-        current_miou = sum(ious) / len(ious) if len(ious) > 0 else 0
-        if current_miou > best_miou:
-            best_miou = current_miou
-            best_window_size = current_window_size
+            # mIoU 계산
+            current_miou = sum(ious) / len(ious) if len(ious) > 0 else 0
+            if current_miou > best_miou:
+                best_miou = current_miou
+                best_recall = recall
+                best_gamma = gamma
+                best_cand_num= cand_num
         
-        print(f'mIoU - {current_window_size}: {current_miou}')
+            print(f'mIoU - {gamma}/{cand_num}: {current_miou}')
 
     # 최적의 조합 출력
+    print('K: 4')
     print('Best mIoU:', best_miou)
-    print(f'Best window size: {best_window_size}')
+    for th, r in zip(thresh, best_recall):
+        print(f'R@{th}:', r / len(ious))
+    print(f'Best gamma: {best_gamma}')
+    print(f'Best cand num: {best_cand_num}')
 
 def eval(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     ious = []

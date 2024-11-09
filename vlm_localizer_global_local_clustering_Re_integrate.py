@@ -191,47 +191,47 @@ def calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma
     #### Similarity score noramlization ####
 
     #### masked importance scores calcualtion ####
-    masked_query_scores = []
-    for masked_element, masked_queries in masked_sentences.items():
-        if "prepositional" in masked_element or "subject" in masked_element or "object" in masked_element:
-            continue
-        for masked_query in masked_queries:
-            if len(masked_query) == 0:
-                continue
-            masked_query_score = calc_scores_with_indices(video_features, [masked_query], scores_idx)
+    # masked_query_scores = []
+    # for masked_element, masked_queries in masked_sentences.items():
+    #     if "prepositional" in masked_element or "subject" in masked_element or "object" in masked_element:
+    #         continue
+    #     for masked_query in masked_queries:
+    #         if len(masked_query) == 0:
+    #             continue
+    #         masked_query_score = calc_scores_with_indices(video_features, [masked_query], scores_idx)
             
-            #### score distribution normalization ####
-            device = masked_query_score.device
-            masked_data = masked_query_score.flatten().cpu().numpy()
-            transformed_masked_data = boxcox(masked_data, lmbda=best_lambda)
-            transformed_masked_min, transformed_masked_max = transformed_masked_data.min(), transformed_masked_data.max()
-            transformed_masked_data = (transformed_masked_data - transformed_masked_min) / (transformed_masked_max - transformed_masked_min)
+    #         #### score distribution normalization ####
+    #         device = masked_query_score.device
+    #         masked_data = masked_query_score.flatten().cpu().numpy()
+    #         transformed_masked_data = boxcox(masked_data, lmbda=best_lambda)
+    #         transformed_masked_min, transformed_masked_max = transformed_masked_data.min(), transformed_masked_data.max()
+    #         transformed_masked_data = (transformed_masked_data - transformed_masked_min) / (transformed_masked_max - transformed_masked_min)
 
-            ## scale ##
-            original_masked_min, original_masked_max = masked_data.min(), masked_data.max()
-            if is_scale:
-                transformed_masked_data = transformed_masked_data * (original_masked_min - original_masked_max) + original_masked_min  # scale to original min/max
-            else:
-                transformed_masked_data = transformed_masked_data * (gamma) + original_masked_min
-            ## scale ##
+    #         ## scale ##
+    #         original_masked_min, original_masked_max = masked_data.min(), masked_data.max()
+    #         if is_scale:
+    #             transformed_masked_data = transformed_masked_data * (original_masked_min - original_masked_max) + original_masked_min  # scale to original min/max
+    #         else:
+    #             transformed_masked_data = transformed_masked_data * (gamma) + original_masked_min
+    #         ## scale ##
 
 
-            masked_query_score = torch.tensor(transformed_masked_data, device=device).reshape(masked_query_score.shape)
-            #### score distribution normalization ####
+    #         masked_query_score = torch.tensor(transformed_masked_data, device=device).reshape(masked_query_score.shape)
+    #         #### score distribution normalization ####
             
-            masked_query_scores.append(masked_query_score)
+    #         masked_query_scores.append(masked_query_score)
    
-    importance_scores_list = []
-    for masked_query_score in masked_query_scores:
-        importance_scores = 1 - masked_query_score / scores
-        importance_scores_list.append(importance_scores)
-    if len(masked_query_scores) == 0:
-        importance_scores = torch.ones_like(scores)
-    else:
-        importance_scores_tensor = torch.stack(importance_scores_list, dim=0)
-        importance_scores =  torch.amax(importance_scores_tensor, dim=0)
-        # importance_scores = importance_scores_tensor.mean(dim=0) # 2D 텐서로 변환
-    cum_importance_scores = torch.cumsum(importance_scores, dim=1)[0]
+    # importance_scores_list = []
+    # for masked_query_score in masked_query_scores:
+    #     importance_scores = 1 - masked_query_score / scores
+    #     importance_scores_list.append(importance_scores)
+    # if len(masked_query_scores) == 0:
+    #     importance_scores = torch.ones_like(scores)
+    # else:
+    #     importance_scores_tensor = torch.stack(importance_scores_list, dim=0)
+    #     importance_scores =  torch.amax(importance_scores_tensor, dim=0)
+    #     # importance_scores = importance_scores_tensor.mean(dim=0) # 2D 텐서로 변환
+    # cum_importance_scores = torch.cumsum(importance_scores, dim=1)[0]
     #### masked importance scores calcualtion ####
 
     scores_idx = scores_idx.reshape(-1)
@@ -330,7 +330,7 @@ def calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma
     final_proposals_scores_static = []
     final_proposals_scores_avg = []
     #### masked importance scores calcualtion ####
-    final_proposals_importance_scores = []
+    # final_proposals_importance_scores = []
     #### masked importance scores calcualtion ####
     for i in range(len(global_proposals)):
         for j in range(i + 1, len(global_proposals)):
@@ -341,32 +341,32 @@ def calc_scores(video_features, sentences, masked_sentences, gt, duration, gamma
             score_static = extract_static_score(start, last, cum_scores, num_frames, scores).item()
             score_avg = extract_avg_score(start, last, cum_scores, num_frames, scores).item()
             #### masked importance scores calcualtion ####
-            importance_score = extract_static_score(start, last, cum_importance_scores, num_frames, scores).item()
+            # importance_score = extract_static_score(start, last, cum_importance_scores, num_frames, scores).item()
             #### masked importance scores calcualtion ####
 
             final_proposals.append([start, last])
             final_proposals_scores_static.append(round(score_static, 4))
             final_proposals_scores_avg.append(round(score_avg, 4))
             #### masked importance scores calcualtion ####
-            final_proposals_importance_scores.append(round(importance_score, 4))
+            # final_proposals_importance_scores.append(round(importance_score, 4))
             #### masked importance scores calcualtion ####
 
     final_proposals = torch.tensor(final_proposals)
     final_proposals_scores_static = torch.tensor(final_proposals_scores_static)
     #### masked importance scores calcualtion ####
-    final_proposals_importance_scores = torch.tensor(final_proposals_importance_scores)
-    for idx, importance_score in enumerate(final_proposals_importance_scores):
-        if importance_score > 0:
-            final_proposals_scores_static[idx] *= high
-        else:
-            final_proposals_scores_static[idx] *= low
+    # final_proposals_importance_scores = torch.tensor(final_proposals_importance_scores)
+    # for idx, importance_score in enumerate(final_proposals_importance_scores):
+    #     if importance_score > 0:
+    #         final_proposals_scores_static[idx] *= high
+    #     else:
+    #         final_proposals_scores_static[idx] *= low
     #### masked importance scores calcualtion ####
 
     value_static, index_static = final_proposals_scores_static.sort(descending=True)
     final_proposals_static = final_proposals[index_static]
     final_proposals_scores_static = final_proposals_scores_static[index_static]
     #### masked importance scores calcualtion ####
-    final_proposals_importance_scores = final_proposals_importance_scores[index_static]
+    # final_proposals_importance_scores = final_proposals_importance_scores[index_static]
     #### masked importance scores calcualtion ####
 
     final_proposals_scores_avg = torch.tensor(final_proposals_scores_avg)
@@ -591,7 +591,7 @@ def post_processing(proposals, local_proposals, local_proposals_scores, gt, num_
     return np.array(post_final_proposals_total)
 
 
-def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num, high, low):
+def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num, high=1.1, low=0.7):
     answer = []
     for query in query_json:
         # import pdb; pdb.set_trace()
