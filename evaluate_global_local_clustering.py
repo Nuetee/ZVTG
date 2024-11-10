@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import json
 from tqdm import tqdm
-from vlm_localizer_global_local_clustering_Re_integrate import localize
+from vlm_localizer_global_local_clustering_final import localize
 from qvhhighlight_eval import eval_submission
 import os
 from llm_prompting import select_proposal, filter_and_integrate
@@ -43,15 +43,13 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
         num_frames = video_feature.shape[0]
         for i in range(len(ann['sentences'])):
             # query
-            query_json = [{'descriptions': ann['sentences'][i], 'masked_descriptions': ann['masked'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
+            query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
             proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=12)
             gt = ann['timestamps'][i]
             iou_ = calc_iou(proposals[:1], gt)[0]
             ious.append(max(iou_, 0))
             recall += thresh <= iou_
 
-        # pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
-        # pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious)), "max_mIoU": sum(max_ious) / len(max_ious), 'max_recall': str(max_recall / len(max_ious)), "mPre": sum(pres) / len(pres)})
         pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
 
     print('mIoU:', sum(ious) / len(ious))
@@ -66,10 +64,6 @@ def eval(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     
     pbar = tqdm(data.items())
     for vid, ann in pbar:
-        query_json = []
-        for i in range(len(ann['sentences'])):
-            query_json.append({'descriptions': [ann['sentences'][i]]})
-
         duration = ann['duration'] if 'duration' in ann else ann['video_duration']
         video_feature_path = os.path.join(feature_path, vid+'.npy')
         video_feature = np.load(video_feature_path)
@@ -78,12 +72,15 @@ def eval(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
             video_feature = np.concatenate([pad_noise, video_feature], axis=0)
             duration += pad_sec
 
-        ans = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor))
-        for i in range(len(ans)):
+        for i in range(len(ann['sentences'])):
+            query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
+            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=12)
+            import pdb; pdb.set_trace()
+            # for i in range(len(ans)):
             s, e = ann['timestamps'][i]
             s, e = s + pad_sec, e + pad_sec
 
-            sp, ep = ans[i]['response'][0]['start'], ans[i]['response'][0]['end']
+            sp, ep = proposals[0][0],  proposals[0][1]
             iou_ = (min(e, ep) - max(s, sp)) / (max(e, ep) - min(s, sp))
             ious.append(max(iou_, 0))
             recall += thresh <= iou_

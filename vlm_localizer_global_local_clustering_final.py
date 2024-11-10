@@ -116,23 +116,6 @@ def split_interval(init_timestep):
     return torch.tensor(ranges)
 
 
-def calc_scores_with_indices(video_features, sentences, indices):
-    with torch.no_grad():
-        text = model.tokenizer(sentences, padding='max_length', truncation=True, max_length=35, return_tensors="pt").to('cuda')
-              
-        text_output = model.Qformer.bert(text.input_ids, attention_mask=text.attention_mask, return_dict=True)
-        text_feat = model.text_proj(text_output.last_hidden_state[:,0,:])
-    
-    v1 = F.normalize(text_feat, dim=-1)
-    v2 = F.normalize(torch.tensor(video_features, device='cuda', dtype=v1.dtype), dim=-1)
-    # 텍스트와 비디오 특징 간의 내적(유사도) 계산
-    scores = torch.einsum('md,npd->mnp', v1, v2)
-    scores = scores.gather(-1, indices.unsqueeze(-1)).squeeze(-1)
-    scores = scores.mean(dim=0, keepdim=True)
-
-    return scores
-
-
 def calc_scores(video_features, sentences, gt, duration, gamma, high, low):
     num_frames = video_features.shape[0]
     gt = torch.round(torch.tensor(gt) / torch.tensor(duration) * num_frames).to(torch.int)
@@ -147,7 +130,7 @@ def calc_scores(video_features, sentences, gt, duration, gamma, high, low):
     scores = torch.einsum('md,npd->mnp', v1, v2)
     scores, scores_idx = scores.max(dim=-1)
     scores = scores.mean(dim=0, keepdim=True)
-    
+
     #### Similarity score noramlization ####
     device = scores.device
     data = scores.flatten().cpu().numpy()
@@ -190,50 +173,6 @@ def calc_scores(video_features, sentences, gt, duration, gamma, high, low):
     cum_scores = torch.cumsum(scores, dim=1)[0]
     #### Similarity score noramlization ####
 
-    #### masked importance scores calcualtion ####
-    # masked_query_scores = []
-    # for masked_element, masked_queries in masked_sentences.items():
-    #     if "prepositional" in masked_element or "subject" in masked_element or "object" in masked_element:
-    #         continue
-    #     for masked_query in masked_queries:
-    #         if len(masked_query) == 0:
-    #             continue
-    #         masked_query_score = calc_scores_with_indices(video_features, [masked_query], scores_idx)
-            
-    #         #### score distribution normalization ####
-    #         device = masked_query_score.device
-    #         masked_data = masked_query_score.flatten().cpu().numpy()
-    #         transformed_masked_data = boxcox(masked_data, lmbda=best_lambda)
-    #         transformed_masked_min, transformed_masked_max = transformed_masked_data.min(), transformed_masked_data.max()
-    #         transformed_masked_data = (transformed_masked_data - transformed_masked_min) / (transformed_masked_max - transformed_masked_min)
-
-    #         ## scale ##
-    #         original_masked_min, original_masked_max = masked_data.min(), masked_data.max()
-    #         if is_scale:
-    #             transformed_masked_data = transformed_masked_data * (original_masked_min - original_masked_max) + original_masked_min  # scale to original min/max
-    #         else:
-    #             transformed_masked_data = transformed_masked_data * (gamma) + original_masked_min
-    #         ## scale ##
-
-
-    #         masked_query_score = torch.tensor(transformed_masked_data, device=device).reshape(masked_query_score.shape)
-    #         #### score distribution normalization ####
-            
-    #         masked_query_scores.append(masked_query_score)
-   
-    # importance_scores_list = []
-    # for masked_query_score in masked_query_scores:
-    #     importance_scores = 1 - masked_query_score / scores
-    #     importance_scores_list.append(importance_scores)
-    # if len(masked_query_scores) == 0:
-    #     importance_scores = torch.ones_like(scores)
-    # else:
-    #     importance_scores_tensor = torch.stack(importance_scores_list, dim=0)
-    #     importance_scores =  torch.amax(importance_scores_tensor, dim=0)
-    #     # importance_scores = importance_scores_tensor.mean(dim=0) # 2D 텐서로 변환
-    # cum_importance_scores = torch.cumsum(importance_scores, dim=1)[0]
-    #### masked importance scores calcualtion ####
-
     scores_idx = scores_idx.reshape(-1)
     video_features = torch.tensor(video_features).cuda()
     selected_video_features = video_features[torch.arange(num_frames), scores_idx]
@@ -243,33 +182,15 @@ def calc_scores(video_features, sentences, gt, duration, gamma, high, low):
     #### 비디오 프레임 벡터 스무딩 (글로벌)
     smooth_kernel_size = 21
     smooth_padding = smooth_kernel_size // 2
-    padding_selected_video_time_features_global = torch.cat((selected_video_time_features[0].repeat(smooth_padding, 1),
-                                                      selected_video_time_features,
-                                                      selected_video_time_features[-1].repeat(smooth_padding, 1)),
-                                                     dim=0)
+    padding_selected_video_time_features_global = torch.cat((selected_video_time_features[0].repeat(smooth_padding, 1), selected_video_time_features, selected_video_time_features[-1].repeat(smooth_padding, 1)), dim=0)
     kernel = torch.ones(padding_selected_video_time_features_global.shape[1], 1, smooth_kernel_size).cuda() / smooth_kernel_size
     padding_selected_video_time_features_global = padding_selected_video_time_features_global.unsqueeze(0).permute(0, 2, 1)  # (1, 257, 104)
-    smoothed_selected_video_time_features_global = F.conv1d(padding_selected_video_time_features_global, kernel, padding=0,
-                                                     groups=padding_selected_video_time_features_global.shape[1])
+    
+    padding_selected_video_time_features_global = padding_selected_video_time_features_global.float()
+    smoothed_selected_video_time_features_global = F.conv1d(padding_selected_video_time_features_global, kernel, padding=0, groups=padding_selected_video_time_features_global.shape[1])
     smoothed_selected_video_time_features_global = smoothed_selected_video_time_features_global.permute(0, 2, 1)
     selected_video_time_features_global = smoothed_selected_video_time_features_global[0]
     #### 비디오 프레임 벡터 스무딩 (글로벌)
-
-    #### 비디오 프레임 벡터 스무딩 (로컬)
-    smooth_kernel_size = 21
-    smooth_padding = smooth_kernel_size // 2
-    padding_selected_video_time_features_local = torch.cat((selected_video_time_features[0].repeat(smooth_padding, 1),
-                                                      selected_video_time_features,
-                                                      selected_video_time_features[-1].repeat(smooth_padding, 1)),
-                                                     dim=0)
-    kernel = torch.ones(padding_selected_video_time_features_local.shape[1], 1,
-                        smooth_kernel_size).cuda() / smooth_kernel_size
-    padding_selected_video_time_features_local = padding_selected_video_time_features_local.unsqueeze(0).permute(0, 2, 1)  # (1, 257, 104)
-    smoothed_selected_video_time_features_local = F.conv1d(padding_selected_video_time_features_local, kernel, padding=0,
-                                                     groups=padding_selected_video_time_features_local.shape[1])
-    smoothed_selected_video_time_features_local = smoothed_selected_video_time_features_local.permute(0, 2, 1)
-    selected_video_time_features_local = smoothed_selected_video_time_features_local[0]
-    selected_video_time_features_local_v2 = F.normalize(selected_video_time_features_local[:,:256], dim=1)
 
     #### K-means 클러스터링 적용 (글로벌)
     kmeans_k = 3  ### 4
@@ -279,15 +200,6 @@ def calc_scores(video_features, sentences, gt, duration, gamma, high, low):
     kmeans_labels_global = kmeans.fit_predict(np.array(selected_video_time_features_global.cpu()))
     kmeans_labels_global = torch.tensor(kmeans_labels_global)
     #### K-means 클러스터링 적용 (글로벌)
-
-    #### K-means 클러스터링 적용 (로컬)
-    kmeans_k = 3  ### 4
-    if num_frames < kmeans_k:
-        kmeans_k = 2
-    kmeans = KMeans(n_clusters=kmeans_k, n_init=10, random_state=42)
-    kmeans_labels_local = kmeans.fit_predict(np.array(selected_video_time_features_local.cpu()))
-    kmeans_labels_local = torch.tensor(kmeans_labels_local)
-    #### K-means 클러스터링 적용 (로컬)
 
     #### (글로벌) 클러스터링 결과에 따라 묶음 만들기
     global_proposals = []
@@ -307,31 +219,11 @@ def calc_scores(video_features, sentences, gt, duration, gamma, high, low):
     global_proposals.append([num_frames, num_frames])
     #### (글로벌) 클러스터링 결과에 따라 묶음 만들기
 
-    #### (로컬) 클러스터링 결과에 따라 묶음 만들기
-    local_proposals = []
-    local_proposals_scores = []
-    start_idx = 0
-    current_val = kmeans_labels_local[0]
-    for i in range(1, num_frames):
-        if kmeans_labels_local[i] != current_val:
-            local_proposals.append([start_idx, i])  ### start_idx 이상, i 미만 까지 같은 레이블
-            score = extract_static_score(start_idx, i, cum_scores, num_frames, scores).item()
-            local_proposals_scores.append(round(score, 4))
-            start_idx = i
-            current_val = kmeans_labels_local[i]
-    local_proposals.append([start_idx, num_frames])
-    score = extract_static_score(start_idx, i, cum_scores, num_frames, scores).item()
-    local_proposals_scores.append(round(score, 4))
-    local_proposals.append([num_frames, num_frames])
-    #### (로컬) 클러스터링 결과에 따라 묶음 만들기
-
     ### (글로벌) Extracting Global Proposals (Cartesian product)
     final_proposals = []
     final_proposals_scores_static = []
     final_proposals_scores_avg = []
-    #### masked importance scores calcualtion ####
-    # final_proposals_importance_scores = []
-    #### masked importance scores calcualtion ####
+    
     for i in range(len(global_proposals)):
         for j in range(i + 1, len(global_proposals)):
             start = global_proposals[i][0]
@@ -340,34 +232,17 @@ def calc_scores(video_features, sentences, gt, duration, gamma, high, low):
             #     continue
             score_static = extract_static_score(start, last, cum_scores, num_frames, scores).item()
             score_avg = extract_avg_score(start, last, cum_scores, num_frames, scores).item()
-            #### masked importance scores calcualtion ####
-            # importance_score = extract_static_score(start, last, cum_importance_scores, num_frames, scores).item()
-            #### masked importance scores calcualtion ####
-
+            
             final_proposals.append([start, last])
             final_proposals_scores_static.append(round(score_static, 4))
             final_proposals_scores_avg.append(round(score_avg, 4))
-            #### masked importance scores calcualtion ####
-            # final_proposals_importance_scores.append(round(importance_score, 4))
-            #### masked importance scores calcualtion ####
 
     final_proposals = torch.tensor(final_proposals)
     final_proposals_scores_static = torch.tensor(final_proposals_scores_static)
-    #### masked importance scores calcualtion ####
-    # final_proposals_importance_scores = torch.tensor(final_proposals_importance_scores)
-    # for idx, importance_score in enumerate(final_proposals_importance_scores):
-    #     if importance_score > 0:
-    #         final_proposals_scores_static[idx] *= high
-    #     else:
-    #         final_proposals_scores_static[idx] *= low
-    #### masked importance scores calcualtion ####
 
     value_static, index_static = final_proposals_scores_static.sort(descending=True)
     final_proposals_static = final_proposals[index_static]
     final_proposals_scores_static = final_proposals_scores_static[index_static]
-    #### masked importance scores calcualtion ####
-    # final_proposals_importance_scores = final_proposals_importance_scores[index_static]
-    #### masked importance scores calcualtion ####
 
     final_proposals_scores_avg = torch.tensor(final_proposals_scores_avg)
     value_avg, index_avg = final_proposals_scores_avg.sort(descending=True)
@@ -375,7 +250,7 @@ def calc_scores(video_features, sentences, gt, duration, gamma, high, low):
     final_proposals_scores_avg = final_proposals_scores_avg[index_avg]
     ### (글로벌) Extracting Global Proposals (Cartesian product)
 
-    return scores, final_proposals_static, final_proposals_scores_static, local_proposals, local_proposals_scores
+    return scores, final_proposals_static, final_proposals_scores_static
 
 
 
@@ -409,7 +284,7 @@ def extract_avg_score(start, end, cum_scores, num_frames, scores):
 def generate_proposal(video_features, sentences, gt, duration, stride, max_stride, gamma, high, low, nms_thresh=0.3):
     num_frames = video_features.shape[0]
     ground_truth = [round(gt[0] / duration * num_frames, 0), round(gt[1] / duration * num_frames, 0)]
-    scores, final_proposals, final_proposals_scores, local_proposals, local_proposals_scores = calc_scores(video_features, sentences, gt, duration, gamma, high, low)
+    scores, final_proposals, final_proposals_scores = calc_scores(video_features, sentences, gt, duration, gamma, high, low)
     cum_scores = torch.cumsum(scores, dim=1)[0]
 
     masks = (scores > 0.2).float()
@@ -436,7 +311,7 @@ def generate_proposal(video_features, sentences, gt, duration, stride, max_strid
     final_scores, sort_idx = final_scores.sort(descending=True)
     final_proposals = final_proposals[sort_idx]
     final_prefix = final_prefix[sort_idx]
-    return [final_proposals], [final_scores], [final_prefix], scores, cum_scores, local_proposals, local_proposals_scores, num_frames
+    return [final_proposals], [final_scores], [final_prefix], scores, cum_scores, num_frames
 
 
 def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num, high=1.1, low=0.7):
@@ -445,7 +320,7 @@ def localize(video_feature, duration, query_json, stride, max_stride, gamma, can
         # import pdb; pdb.set_trace()
         gt = query['gt']
         duration = query['duration']
-        proposals, scores, pre_proposals, ori_scores, ori_cum_scores, local_proposals, local_proposals_scores, num_frames = generate_proposal(video_feature, query['descriptions'], gt,
+        proposals, scores, pre_proposals, ori_scores, ori_cum_scores, num_frames = generate_proposal(video_feature, query['descriptions'], gt,
                                                                          duration, stride, max_stride, gamma, high, low)
         if len(proposals[0]) == 0:
             static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
