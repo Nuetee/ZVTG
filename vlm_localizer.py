@@ -764,7 +764,7 @@ def localize(video_feature, duration, query_json, stride, max_stride):
             query['response'] = []
             for i in range(len(static_pred)):
                 query['response'].append({
-                    'start': float(static_pred[i][0]),
+                    'start': float(dynamic_pred[i]),
                     'static_start': float(static_pred[i][0]),
                     'end': float(static_pred[i][1]),
                     'confidence': float(scores[i])
