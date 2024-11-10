@@ -33,11 +33,8 @@ def calc_iou2(candidates, gt):
 
 def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     ious = []
-    pres = []
-    max_ious = []
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
-    max_recall = np.array([0, 0, 0])
     pbar = tqdm(data.items())
     
     for vid, ann in pbar:
@@ -50,34 +47,16 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
             proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor))
             gt = ann['timestamps'][i]
             iou_ = calc_iou(proposals[:1], gt)[0]
-            pre = calc_iou2(proposals[:1], gt)[0]
-            pres.append(max(pre, 0))
             ious.append(max(iou_, 0))
             recall += thresh <= iou_
 
-            ######
-            max_iou_ = 0
-            for i in range(len(proposals)):
-                temp_iou_ = calc_iou(proposals[i:i+1], gt)[0]
-                if temp_iou_ > max_iou_:
-                    max_iou_ = temp_iou_
-            max_ious.append(max(max_iou_, 0))
-            max_recall += thresh <= max_iou_
-            ######
-
         # pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
         # pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious)), "max_mIoU": sum(max_ious) / len(max_ious), 'max_recall': str(max_recall / len(max_ious)), "mPre": sum(pres) / len(pres)})
-        pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious)), "mPre": sum(pres) / len(pres)})
+        pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
 
     print('mIoU:', sum(ious) / len(ious))
     for th, r in zip(thresh, recall):
         print(f'R@{th}:', r / len(ious))
-    
-    print('mPre:',sum(pres) / len(pres))
-
-    print('max_mIoU:', sum(max_ious) / len(max_ious)) #####
-    for th, max_r in zip(thresh, max_recall): #####
-        print(f'MAX R@{th}:', max_r / len(max_ious)) #####
 
 
 def eval(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
