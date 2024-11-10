@@ -35,7 +35,6 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     ious = []
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
-    max_recall = np.array([0, 0, 0])
     pbar = tqdm(data.items())
     
     for vid, ann in pbar:
@@ -50,7 +49,6 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
             iou_ = calc_iou(proposals[:1], gt)[0]
             ious.append(max(iou_, 0))
             recall += thresh <= iou_
-
 
         # pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
         # pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious)), "max_mIoU": sum(max_ious) / len(max_ious), 'max_recall': str(max_recall / len(max_ious)), "mPre": sum(pres) / len(pres)})
