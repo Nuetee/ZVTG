@@ -74,8 +74,8 @@ def eval(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
 
         for i in range(len(ann['sentences'])):
             query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=12)
-            import pdb; pdb.set_trace()
+            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=12, kmeans_k=3)
+
             # for i in range(len(ans)):
             s, e = ann['timestamps'][i]
             s, e = s + pad_sec, e + pad_sec
