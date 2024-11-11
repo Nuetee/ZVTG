@@ -150,10 +150,14 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k):
 
         # 패딩 제거하여 원래 크기의 마스크로 복원
         masks = final_mask[:, 1:-1].squeeze()
+    
+    # 모든 값이 False일 경우 전부 True로 설정
+    if not masks.any():
+        masks[:] = True
 
     # final_mask를 기반으로 masked_indices 계산
     masked_indices = torch.nonzero(masks, as_tuple=True)[0]  # 마스킹된 실제 인덱스 저장
-
+    import pdb;pdb.set_trace()
     #### Similarity score noramlization ####
     device = scores.device
     data = scores[:, masks].flatten().cpu().numpy()   # 마스크된 부분만 가져오기
