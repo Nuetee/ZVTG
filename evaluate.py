@@ -159,10 +159,12 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     print('Sequentially query data number:', len(sequentially_ious))
     # endregion
 
-def eval(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
+def eval(data, feature_path, pad_sec=0.0):
     ious = []
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
+    stride = 20
+    max_stride_factor = 0.5
     
     pbar = tqdm(data.items())
     for vid, ann in pbar:
@@ -240,5 +242,5 @@ if __name__=='__main__':
         else:
             with open(dataset['splits'][args.split]['annotation_file']) as f:
                 data = json.load(f)
-            eval(data, dataset['feature_path'], dataset['stride'], dataset['max_stride_factor'], dataset['splits'][args.split]['pad_sec'])
+            eval(data, dataset['feature_path'], dataset['splits'][args.split]['pad_sec'])
         
