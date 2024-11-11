@@ -36,7 +36,7 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
     pbar = tqdm(data.items())
-    
+
     for vid, ann in pbar:
         duration = ann['duration']
         video_feature = np.load(os.path.join(feature_path, vid+'.npy'))

@@ -139,17 +139,17 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k):
         masks = initial_mask.squeeze()  # initial_mask를 그대로 사용
     else:
         # 양쪽 끝에 2씩 패딩 (모두 False로 설정)
-        padded_mask = F.pad(initial_mask, (2, 2), mode='constant', value=False)
+        padded_mask = F.pad(initial_mask, (1, 1), mode='constant', value=False)
 
         # 현재 위치를 기준으로 양옆 2개의 마스크 값 확인
         final_mask = padded_mask.clone()  # 최종 마스크 결과 저장
-        for i in range(2, padded_mask.shape[1] - 2):
-            window = padded_mask[:, i - 2 : i + 3]
-            if window.sum() < 3:  # 과반 이상이 마스킹되지 않은 경우
+        for i in range(2, padded_mask.shape[1] - 1):
+            window = padded_mask[:, i - 1 : i + 2]
+            if window.sum() < 2:  # 과반 이상이 마스킹되지 않은 경우
                 final_mask[:, i] = 0
 
         # 패딩 제거하여 원래 크기의 마스크로 복원
-        masks = final_mask[:, 2:-2].squeeze()
+        masks = final_mask[:, 1:-1].squeeze()
 
     # final_mask를 기반으로 masked_indices 계산
     masked_indices = torch.nonzero(masks, as_tuple=True)[0]  # 마스킹된 실제 인덱스 저장
