@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import json
 from tqdm import tqdm
-from vlm_localizer_global_local_clustering_final_test import localize
+from vlm_localizer_global_local_clustering_final import localize
 from qvhhighlight_eval import eval_submission
 import os
 from llm_prompting import select_proposal, filter_and_integrate
