@@ -31,7 +31,11 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
 
-
+    # 10% 단위로 구간을 나누어 구간별 IoU와 recall을 기록할 리스트 초기화
+    interval_ious = {f"{i*10}-{(i+1)*10}%": [] for i in range(10)}
+    interval_recalls = {f"{i*10}-{(i+1)*10}%": np.array([0, 0, 0]) for i in range(10)}
+    interval_counts = {f"{i*10}-{(i+1)*10}%": 0 for i in range(10)}  # 각 구간의 개수를 기록
+    
     pbar = tqdm(data.items())
     for vid, ann in pbar:
         duration = ann['duration']
@@ -47,17 +51,33 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
 
             proposals = select_proposal(np.array(proposals))
 
-
             gt = ann['timestamps'][i]
             iou_ = calc_iou(proposals[:1], gt)[0]
             ious.append(max(iou_, 0))
             recall += thresh <= iou_
+
+            # gt의 상대적 길이에 따른 비율 계산 및 구간별 IoU와 recall 기록
+            relative_length = (gt[1] - gt[0]) / duration
+            interval_index = min(int(relative_length * 10), 9)  # 0~9까지 인덱스
+            interval_key = f"{interval_index*10}-{(interval_index+1)*10}%"
+            interval_ious[interval_key].append(max(iou_, 0))
+            interval_recalls[interval_key] += thresh <= iou_
+            interval_counts[interval_key] += 1
 
         pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
     
     print('mIoU:', sum(ious) / len(ious))
     for th, r in zip(thresh, recall):
         print(f'R@{th}:', r / len(ious))
+
+    # 구간별 mIoU와 recall 계산 및 출력
+    for interval, interval_ious_list in interval_ious.items():
+        if interval_ious_list:  # 구간에 IoU 값이 존재하는 경우에만 계산
+            mIoU = sum(interval_ious_list) / len(interval_ious_list)
+            interval_recall = interval_recalls[interval] / interval_counts[interval] if interval_counts[interval] > 0 else np.array([0, 0, 0])
+            print(f'{interval} - mIoU: {mIoU}, Recall: {interval_recall}')
+        else:
+            print(f'{interval} - mIoU: No data, Recall: No data')
 
 if __name__=='__main__':
     args = get_args()
