@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import json
 from tqdm import tqdm
-from vlm_localizer_global_local_clustering_final import localize
+from vlm_localizer_global_local_clustering_final_test import localize
 from qvhhighlight_eval import eval_submission
 import os
 from llm_prompting import select_proposal, filter_and_integrate
@@ -45,6 +45,7 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
             # query
             query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
             proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=12, kmeans_k=3)
+    
             gt = ann['timestamps'][i]
             iou_ = calc_iou(proposals[:1], gt)[0]
             ious.append(max(iou_, 0))
@@ -73,14 +74,13 @@ def eval(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
             duration += pad_sec
 
         for i in range(len(ann['sentences'])):
-            query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=12, kmeans_k=3)
-
-            # for i in range(len(ans)):
+            query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': duration}]
+            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=12, kmeans_k=5)
             s, e = ann['timestamps'][i]
             s, e = s + pad_sec, e + pad_sec
 
             sp, ep = proposals[0][0],  proposals[0][1]
+            # import pdb;pdb.set_trace()
             iou_ = (min(e, ep) - max(s, sp)) / (max(e, ep) - min(s, sp))
             ious.append(max(iou_, 0))
             recall += thresh <= iou_

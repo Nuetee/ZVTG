@@ -170,7 +170,6 @@ def eval(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
         for i in range(len(ann['sentences'])):
             query_json.append({'descriptions': [ann['sentences'][i]]})
 
-        import pdb; pdb.set_trace()
         duration = ann['duration'] if 'duration' in ann else ann['video_duration']
         video_feature_path = os.path.join(feature_path, vid+'.npy')
         video_feature = np.load(video_feature_path)
