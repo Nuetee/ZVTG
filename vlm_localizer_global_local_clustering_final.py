@@ -157,7 +157,12 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k):
 
     # final_mask를 기반으로 masked_indices 계산
     masked_indices = torch.nonzero(masks, as_tuple=True)[0]  # 마스킹된 실제 인덱스 저장
-
+    
+    #### w/o sim score norm ####
+    # masked_scores = score[:, masks]
+    # cum_scores = torch.cumsum(masked_scores, dim=1)[0]
+    #### w/o sim score norm ####
+    
     #### Similarity score noramlization ####
     device = scores.device
     data = scores[:, masks].flatten().cpu().numpy()   # 마스크된 부분만 가져오기

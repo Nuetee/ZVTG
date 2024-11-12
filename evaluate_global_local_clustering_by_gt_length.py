@@ -37,10 +37,10 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     recall = np.array([0, 0, 0])
     pbar = tqdm(data.items())
 
-    # 10% 단위로 구간을 나누어 구간별 IoU와 recall을 기록할 리스트 초기화
-    interval_ious = {f"{i*10}-{(i+1)*10}%": [] for i in range(10)}
-    interval_recalls = {f"{i*10}-{(i+1)*10}%": np.array([0, 0, 0]) for i in range(10)}
-    interval_counts = {f"{i*10}-{(i+1)*10}%": 0 for i in range(10)}  # 각 구간의 개수를 기록
+   # 구간을 20% 미만, 20~30%, 30~40%, 40% 이상으로 나누어 초기화
+    interval_ious = {'<20%': [], '20-30%': [], '30-40%': [], '>=40%': []}
+    interval_recalls = {'<20%': np.array([0, 0, 0]), '20-30%': np.array([0, 0, 0]), '30-40%': np.array([0, 0, 0]), '>=40%': np.array([0, 0, 0])}
+    interval_counts = {'<20%': 0, '20-30%': 0, '30-40%': 0, '>=40%': 0}  # 각 구간의 개수를 기록
 
     for vid, ann in pbar:
         duration = ann['duration']
@@ -58,12 +58,18 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
 
             # gt의 상대적 길이에 따른 비율 계산 및 구간별 IoU와 recall 기록
             relative_length = (gt[1] - gt[0]) / duration
-            interval_index = min(int(relative_length * 10), 9)  # 0~9까지 인덱스
-            interval_key = f"{interval_index*10}-{(interval_index+1)*10}%"
+            if relative_length < 0.2:
+                interval_key = '<20%'
+            elif 0.2 <= relative_length < 0.3:
+                interval_key = '20-30%'
+            elif 0.3 <= relative_length < 0.4:
+                interval_key = '30-40%'
+            else:
+                interval_key = '>=40%'
+                
             interval_ious[interval_key].append(max(iou_, 0))
             interval_recalls[interval_key] += thresh <= iou_
             interval_counts[interval_key] += 1
-
         pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
 
     print('mIoU:', sum(ious) / len(ious))
