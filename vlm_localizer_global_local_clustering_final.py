@@ -389,7 +389,7 @@ def generate_proposal(video_features, sentences, gt, duration, stride, max_strid
     return [final_proposals], [final_scores], [final_prefix], scores, cum_scores, num_frames
 
 
-def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num, kmeans_k, prior):
+def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num, kmeans_k, prior, use_llm_cand_num=3, use_llm=False):
     answer = []
     for query in query_json:
         # import pdb; pdb.set_trace()
@@ -429,6 +429,10 @@ def localize(video_feature, duration, query_json, stride, max_stride, gamma, can
                       in answer if len(p['response']) > t]  ### only static
     proposals = np.array(proposals)
     proposals[:,:2] = proposals[:,:2] / num_frames * duration
+    
+    if use_llm:
+        return list(proposals[:use_llm_cand_num])
+    
     post_proposals = proposals
     np.set_printoptions(precision=4, suppress=True)
     post_proposals = select_proposal(np.array(post_proposals))
