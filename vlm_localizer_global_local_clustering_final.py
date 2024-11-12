@@ -159,7 +159,7 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k):
     masked_indices = torch.nonzero(masks, as_tuple=True)[0]  # 마스킹된 실제 인덱스 저장
     
     #### w/o sim score norm ####
-    # masked_scores = score[:, masks]
+    # masked_scores = scores[:, masks]
     # cum_scores = torch.cumsum(masked_scores, dim=1)[0]
     #### w/o sim score norm ####
     
@@ -262,8 +262,8 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k):
         for j in range(i + 1, len(global_proposals)):
             start = global_proposals[i][0]
             last = global_proposals[j][0]
-            # if (last - start) > num_frames * 0.5:
-            #     continue
+            if (last - start) > num_frames * 0.5:
+                continue
             score_static = extract_static_score(start, last, cum_scores, len(cum_scores), scores).item()
             score_avg = extract_avg_score(start, last, cum_scores, len(cum_scores), scores).item()
             
