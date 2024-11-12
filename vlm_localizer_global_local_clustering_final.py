@@ -115,6 +115,36 @@ def split_interval(init_timestep):
     ranges.append([start, end])
     return torch.tensor(ranges)
 
+import re
+def sanitize_filename(filename):
+    # 허용되지 않는 문자를 `_`로 대체
+    filename = re.sub(r'[\/:*?"<>|]', '_', filename)
+    return filename
+
+# calc_scores 함수 실행 후에 scores와 normalized_scores를 입력으로 사용합니다.
+import matplotlib.pyplot as plt
+def plot_scores(scores, normalized_scores, timestamps, filename="scores_plot.png"):
+    # scores와 normalized_scores를 GPU에서 CPU로 이동시키고 numpy 배열로 변환
+    scores_np = scores.squeeze().cpu().numpy()
+    normalized_scores_np = normalized_scores.squeeze().cpu().numpy()
+
+    # 그래프 생성
+    plt.figure(figsize=(10, 6))
+    plt.plot(scores_np, label="Scores", linestyle="-")
+    plt.plot(normalized_scores_np, label="Normalized Scores", linestyle="-")
+    plt.xlabel("Frame Index")
+    plt.ylabel("Score")
+    plt.title("Scores and Normalized Scores")
+    plt.legend()
+    plt.grid(True)
+    
+    # timestamps 구간을 회색으로 칠하기
+    start, end = timestamps 
+    plt.axvspan(start, end, color='gray', alpha=0.3)  # 회색 구간 추가
+
+    # 그래프를 파일로 저장
+    plt.savefig(filename)
+    plt.close()  # 메모리 절약을 위해 그래프 닫기
 
 def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=1):
     num_frames = video_features.shape[0]
@@ -205,6 +235,12 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
 
     cum_scores = torch.cumsum(normalized_scores, dim=1)[0]
     #### Similarity score noramlization ####
+    
+    #### save sim score ####
+    # revise_sentences = sanitize_filename(sentences)
+    # gt_frame = [int(round(x / duration * num_frames)) for x in gt]
+    # plot_scores(scores, normalized_scores, gt_frame, filename=f"./sim_score/{revise_sentences}.png")
+    #### save sim score ####
 
     scores_idx = scores_idx.reshape(-1)
     video_features = torch.tensor(video_features).cuda()

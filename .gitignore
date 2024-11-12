@@ -8,3 +8,5 @@ cadidate*/
 imgs/
 *.pyc
 __pycache__/
+sim_score/
+best_sim_score/
