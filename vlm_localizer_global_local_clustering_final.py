@@ -116,7 +116,7 @@ def split_interval(init_timestep):
     return torch.tensor(ranges)
 
 
-def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k):
+def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=1):
     num_frames = video_features.shape[0]
     # gt = torch.round(torch.tensor(gt) / torch.tensor(duration) * num_frames).to(torch.int)
     with torch.no_grad():
@@ -262,7 +262,7 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k):
         for j in range(i + 1, len(global_proposals)):
             start = global_proposals[i][0]
             last = global_proposals[j][0]
-            if (last - start) > num_frames * 0.5:
+            if (last - start) > num_frames * prior:
                 continue
             score_static = extract_static_score(start, last, cum_scores, len(cum_scores), scores).item()
             score_avg = extract_avg_score(start, last, cum_scores, len(cum_scores), scores).item()
@@ -320,10 +320,10 @@ def extract_avg_score(start, end, cum_scores, num_frames, scores):
     return avg_score
 
 
-def generate_proposal(video_features, sentences, gt, duration, stride, max_stride, gamma, kmeans_k, nms_thresh=0.3):
+def generate_proposal(video_features, sentences, gt, duration, stride, max_stride, gamma, kmeans_k, prior, nms_thresh=0.3):
     num_frames = video_features.shape[0]
     ground_truth = [round(gt[0] / duration * num_frames, 0), round(gt[1] / duration * num_frames, 0)]
-    scores, final_proposals, final_proposals_scores = calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k)
+    scores, final_proposals, final_proposals_scores = calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior)
     cum_scores = torch.cumsum(scores, dim=1)[0]
 
     masks = (scores > 0.2).float()
@@ -353,12 +353,12 @@ def generate_proposal(video_features, sentences, gt, duration, stride, max_strid
     return [final_proposals], [final_scores], [final_prefix], scores, cum_scores, num_frames
 
 
-def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num, kmeans_k):
+def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num, kmeans_k, prior):
     answer = []
     for query in query_json:
         # import pdb; pdb.set_trace()
         gt = query['gt']
-        proposals, scores, pre_proposals, ori_scores, ori_cum_scores, num_frames = generate_proposal(video_feature, query['descriptions'], gt, duration, stride, max_stride, gamma, kmeans_k)
+        proposals, scores, pre_proposals, ori_scores, ori_cum_scores, num_frames = generate_proposal(video_feature, query['descriptions'], gt, duration, stride, max_stride, gamma, kmeans_k, prior)
         if len(proposals[0]) == 0:
             static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
             dynamic_pred = np.array([0.0, 0.0, 0.0])
