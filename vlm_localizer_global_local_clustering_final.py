@@ -146,7 +146,7 @@ def plot_scores(scores, normalized_scores, timestamps, filename="scores_plot.png
     plt.savefig(filename)
     plt.close()  # 메모리 절약을 위해 그래프 닫기
 
-def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=1):
+def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=1, temporal_window_size=21):
     num_frames = video_features.shape[0]
     gt = torch.round(torch.tensor(gt) / torch.tensor(duration) * num_frames).to(torch.int)
     with torch.no_grad():
@@ -250,6 +250,7 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
     selected_video_time_features = selected_video_time_features[masks]
 
     ### feature t-SNE 저장
+    # region
     # import matplotlib.pyplot as plt
     # from sklearn.manifold import TSNE
 
@@ -283,10 +284,11 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
     # # plt.savefig(f"./tsne/tsne_features_{sentences}.png")
     # os.makedirs('./tsne_activitynet', exist_ok=True)
     # plt.savefig(f"./tsne_activitynet_test/tsne_features_{sentences}.png")
+    # endregion
     ### feature t-SNE 저장
 
     #### 비디오 프레임 벡터 스무딩 (글로벌)
-    smooth_kernel_size = 11
+    smooth_kernel_size = temporal_window_size
     smooth_padding = smooth_kernel_size // 2
     padding_selected_video_time_features_global = torch.cat((selected_video_time_features[0].repeat(smooth_padding, 1), selected_video_time_features, selected_video_time_features[-1].repeat(smooth_padding, 1)), dim=0)
     kernel = torch.ones(padding_selected_video_time_features_global.shape[1], 1, smooth_kernel_size).cuda() / smooth_kernel_size
@@ -299,6 +301,7 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
     #### 비디오 프레임 벡터 스무딩 (글로벌)
 
     ### feature t-SNE 저장
+    # region
     # import matplotlib.pyplot as plt
     # from sklearn.manifold import TSNE
 
@@ -332,6 +335,7 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
     # # plt.savefig(f"./tsne_global/tsne_global_features_{sentences}.png")
     # os.makedirs('./tsne_global_activitynet_test', exist_ok=True)
     # plt.savefig(f"./tsne_global_activitynet_test/tsne_global_features_{sentences}.png")
+    # endregion
     ### feature t-SNE 저장
 
     #### K-means 클러스터링 적용 (글로벌)
@@ -428,10 +432,10 @@ def extract_avg_score(start, end, cum_scores, num_frames, scores):
     return avg_score
 
 
-def generate_proposal(video_features, sentences, gt, duration, stride, max_stride, gamma, kmeans_k, prior, nms_thresh=0.3):
+def generate_proposal(video_features, sentences, gt, duration, stride, max_stride, gamma, kmeans_k, prior, temporal_window_size):
     num_frames = video_features.shape[0]
     ground_truth = [round(gt[0] / duration * num_frames, 0), round(gt[1] / duration * num_frames, 0)]
-    scores, final_proposals, final_proposals_scores = calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior)
+    scores, final_proposals, final_proposals_scores = calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior, temporal_window_size)
     cum_scores = torch.cumsum(scores, dim=1)[0]
 
     masks = (scores > 0.2).float()
@@ -461,12 +465,12 @@ def generate_proposal(video_features, sentences, gt, duration, stride, max_strid
     return [final_proposals], [final_scores], [final_prefix], scores, cum_scores, num_frames
 
 
-def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num, kmeans_k, prior, use_llm=False):
+def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num, kmeans_k, prior, temporal_window_size, use_llm=False):
     answer = []
     for query in query_json:
         # import pdb; pdb.set_trace()
         gt = query['gt']
-        proposals, scores, pre_proposals, ori_scores, ori_cum_scores, num_frames = generate_proposal(video_feature, query['descriptions'], gt, duration, stride, max_stride, gamma, kmeans_k, prior)
+        proposals, scores, pre_proposals, _, _, num_frames = generate_proposal(video_feature, query['descriptions'], gt, duration, stride, max_stride, gamma, kmeans_k, prior, temporal_window_size)
         if len(proposals[0]) == 0:
             static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
             dynamic_pred = np.array([0.0, 0.0, 0.0])

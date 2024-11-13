@@ -30,6 +30,7 @@ def eval_with_llm(data, dataset_name, feature_path, stride, max_stride_factor):
     best_miou = 0
     
     kmeans_k = 4
+    temporal_window_size = 21
     if dataset_name == 'charades':
         gamma_list = [0.2]
         cand_num_list = [6, 7, 8, 9, 10, 11, 12]
