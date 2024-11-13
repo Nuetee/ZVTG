@@ -37,10 +37,21 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     recall = np.array([0, 0, 0])
     pbar = tqdm(data.items())
 
-   # 구간을 20% 미만, 20~30%, 30~40%, 40% 이상으로 나누어 초기화
-    interval_ious = {'<20%': [], '20-30%': [], '30-40%': [], '>=40%': []}
-    interval_recalls = {'<20%': np.array([0, 0, 0]), '20-30%': np.array([0, 0, 0]), '30-40%': np.array([0, 0, 0]), '>=40%': np.array([0, 0, 0])}
-    interval_counts = {'<20%': 0, '20-30%': 0, '30-40%': 0, '>=40%': 0}  # 각 구간의 개수를 기록
+   # Charades-STA
+    interval_ious = {'<5s': [], '<15s': [], '15s<=': []}
+    interval_recalls = {'<5s': np.array([0, 0, 0]), '<15s': np.array([0, 0, 0]), '15s<=': np.array([0, 0, 0])}
+    interval_counts = {'<5s': 0, '<15s': 0, '15s<=': 0}  # 각 구간의 개수를 기록
+
+    # ActivityNet
+    # interval_ious = {'<15s': [], '<30s': [], '<45s': [], '45s<=': []}
+    # interval_recalls = {'<15s': np.array([0, 0, 0]), '<30s': np.array([0, 0, 0]), '<45s': np.array([0, 0, 0]), '45s<=': np.array([0, 0, 0])}
+    # interval_counts = {'<15s': 0, '<30s': 0, '<45s': 0, '45s<=': 0}  # 각 구간의 개수를 기록
+    
+    # ActivityNet - 2 
+    interval_ious = {'<20s': [], '<40s': [], '60s<=': []}
+    interval_recalls = {'<20s': np.array([0, 0, 0]), '<40s': np.array([0, 0, 0]), '60s<=': np.array([0, 0, 0])}
+    interval_counts = {'<20s': 0, '<40s': 0, '60s<=': 0}  # 각 구간의 개수를 기록
+
 
     for vid, ann in pbar:
         duration = ann['duration']
@@ -57,19 +68,51 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
             recall += thresh <= iou_
 
             # gt의 상대적 길이에 따른 비율 계산 및 구간별 IoU와 recall 기록
-            relative_length = (gt[1] - gt[0]) / duration
-            if relative_length < 0.2:
-                interval_key = '<20%'
-            elif 0.2 <= relative_length < 0.3:
-                interval_key = '20-30%'
-            elif 0.3 <= relative_length < 0.4:
-                interval_key = '30-40%'
-            else:
-                interval_key = '>=40%'
-                
-            interval_ious[interval_key].append(max(iou_, 0))
-            interval_recalls[interval_key] += thresh <= iou_
-            interval_counts[interval_key] += 1
+            gt_length = gt[1] - gt[0] 
+            # if gt_length < 5:
+            #     interval_key = '<5s'
+            #     interval_ious[interval_key].append(max(iou_, 0))
+            #     interval_recalls[interval_key] += thresh <= iou_
+            #     interval_counts[interval_key] += 1
+            # if gt_length < 15:
+            #     interval_key = '<15s'
+            #     interval_ious[interval_key].append(max(iou_, 0))
+            #     interval_recalls[interval_key] += thresh <= iou_
+            #     interval_counts[interval_key] += 1
+            # if gt_length >= 15:
+            #     interval_key = '15s<='
+            #     interval_ious[interval_key].append(max(iou_, 0))
+            #     interval_recalls[interval_key] += thresh <= iou_
+            #     interval_counts[interval_key] += 1
+
+            # if gt_length < 15:
+            #     interval_key = '<15s'
+            # if gt_length < 30:
+            #     interval_key = '<30s'
+            # if gt_length < 45:
+            #     interval_key = '<45s'
+            # if gt_length >=45:
+            #     interval_key = '45s<='
+
+            if gt_length < 20:
+                interval_key = '<20s'
+                interval_ious[interval_key].append(max(iou_, 0))
+                interval_recalls[interval_key] += thresh <= iou_
+                interval_counts[interval_key] += 1
+            if gt_length < 40:
+                interval_key = '<40s'
+                interval_ious[interval_key].append(max(iou_, 0))
+                interval_recalls[interval_key] += thresh <= iou_
+                interval_counts[interval_key] += 1
+            if gt_length >= 60:
+                interval_key = '60s<='
+                interval_ious[interval_key].append(max(iou_, 0))
+                interval_recalls[interval_key] += thresh <= iou_
+                interval_counts[interval_key] += 1
+
+            # interval_ious[interval_key].append(max(iou_, 0))
+            # interval_recalls[interval_key] += thresh <= iou_
+            # interval_counts[interval_key] += 1
         pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
 
     print('mIoU:', sum(ious) / len(ious))
@@ -103,7 +146,7 @@ def eval(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
 
         for i in range(len(ann['sentences'])):
             query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': duration}]
-            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=12, kmeans_k=7)
+            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=12, kmeans_k=7, prior=0.5)
             s, e = ann['timestamps'][i]
             s, e = s + pad_sec, e + pad_sec
 
