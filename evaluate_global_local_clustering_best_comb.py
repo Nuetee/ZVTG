@@ -50,8 +50,8 @@ def eval_with_llm(data, dataset_name, feature_path, stride, max_stride_factor):
                 ious = []
                 thresh = np.array([0.3, 0.5, 0.7])
                 recall = np.array([0, 0, 0])
+                print(f"Dataset: {dataset_name}, (k, gamma, cand_num, prior): ({kmeans_k}, {gamma}, {cand_num}, {prior})")
                 pbar = tqdm(data.items())
-                print(f"Dataset: {dataset_name}, (gamma, cand_num, prior): ({gamma}, {cand_num}, {prior})")
                 for vid, ann in pbar:
                     duration = ann['duration']
                     video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
