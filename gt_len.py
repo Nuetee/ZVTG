@@ -38,7 +38,7 @@ def get_custom_distribution(data, bins):
 # 파일 경로와 사용자 정의 구간 설정
 file_path = './dataset/charades-sta/llm_outputs.json'
 # file_path = './dataset/activitynet/llm_outputs.json'
-bins = [5, 15, 10000]  # 원하는 구간을 리스트로 정의
+bins = [5, 15, 20, 25]  # 원하는 구간을 리스트로 정의
 
 # 실행
 data = load_json(file_path)
