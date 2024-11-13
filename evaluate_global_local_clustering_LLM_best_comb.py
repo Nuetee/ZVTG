@@ -172,7 +172,7 @@ if __name__=='__main__':
         if args.llm_output and os.path.exists(args.llm_output):
             with open(args.llm_output) as f:
                 data = json.load(f)
-            eval_with_llm(data, dataset['feature_path'], dataset['stride'], dataset['max_stride_factor'], dataset['splits'][args.split]['pad_sec'])
+            eval_with_llm(data, args.dataset, dataset['feature_path'], dataset['stride'], dataset['max_stride_factor'])
         else:
             with open(dataset['splits'][args.split]['annotation_file']) as f:
                 data = json.load(f)
