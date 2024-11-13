@@ -249,6 +249,35 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
     selected_video_time_features = torch.cat((selected_video_features, time_features), dim=1)
     selected_video_time_features = selected_video_time_features[masks]
 
+    ### feature t-SNE 저장
+    import matplotlib.pyplot as plt
+    from sklearn.manifold import TSNE
+
+    # Normalize features
+    normalized_features = torch.nn.functional.normalize(selected_video_time_features, p=2, dim=1)
+    normalized_features_np = normalized_features.detach().cpu().numpy()
+
+    # Apply t-SNE
+    tsne = TSNE(n_components=2, random_state=42)
+    tsne_features = tsne.fit_transform(normalized_features_np)
+
+    # Plot t-SNE with indices, using red color for points within the timestamp range
+    start = gt[0]
+    end = gt[1]
+    plt.figure(figsize=(8, 8))
+    for i, (x, y) in enumerate(tsne_features):
+        color = 'red' if start <= i <= end else 'blue'
+        plt.scatter(x, y, c=color, s=10)
+        plt.text(x, y - 0.1, str(i), fontsize=8, ha='center')  # Show index slightly below the point
+
+    plt.title("t-SNE of Single-Frame Features with Indices")
+    plt.legend()
+    # os.makedirs('./tsne', exist_ok=True)
+    # plt.savefig(f"./tsne/tsne_features_{sentences}.png")
+    os.makedirs('./tsne_activitynet', exist_ok=True)
+    plt.savefig(f"./tsne_activitynet/tsne_features_{sentences}.png")
+    ### feature t-SNE 저장
+
     #### 비디오 프레임 벡터 스무딩 (글로벌)
     smooth_kernel_size = 21
     smooth_padding = smooth_kernel_size // 2
@@ -261,6 +290,35 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
     smoothed_selected_video_time_features_global = smoothed_selected_video_time_features_global.permute(0, 2, 1)
     selected_video_time_features_global = smoothed_selected_video_time_features_global[0]
     #### 비디오 프레임 벡터 스무딩 (글로벌)
+
+    ### feature t-SNE 저장
+    import matplotlib.pyplot as plt
+    from sklearn.manifold import TSNE
+
+    # Normalize features
+    normalized_features = torch.nn.functional.normalize(selected_video_time_features_global, p=2, dim=1)
+    normalized_features_np = normalized_features.detach().cpu().numpy()
+
+    # Apply t-SNE
+    tsne = TSNE(n_components=2, random_state=42)
+    tsne_features = tsne.fit_transform(normalized_features_np)
+
+    # Plot t-SNE with indices, using red color for points within the timestamp range
+    start = gt[0]
+    end = gt[1]
+    plt.figure(figsize=(8, 8))
+    for i, (x, y) in enumerate(tsne_features):
+        color = 'red' if start <= i <= end else 'blue'
+        plt.scatter(x, y, c=color, s=10)
+        plt.text(x, y - 0.1, str(i), fontsize=8, ha='center')  # Show index slightly below the point
+
+    plt.title("t-SNE of Global Features with Indices")
+    plt.legend()
+    # os.makedirs('./tsne_global', exist_ok=True)
+    # plt.savefig(f"./tsne_global/tsne_global_features_{sentences}.png")
+    os.makedirs('./tsne_global_activitynet', exist_ok=True)
+    plt.savefig(f"./tsne_global_activitynet/tsne_global_features_{sentences}.png")
+    ### feature t-SNE 저장
 
     #### K-means 클러스터링 적용 (글로벌)
     if len(masked_indices) < kmeans_k:
