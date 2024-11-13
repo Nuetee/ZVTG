@@ -148,7 +148,7 @@ def plot_scores(scores, normalized_scores, timestamps, filename="scores_plot.png
 
 def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=1):
     num_frames = video_features.shape[0]
-    # gt = torch.round(torch.tensor(gt) / torch.tensor(duration) * num_frames).to(torch.int)
+    gt = torch.round(torch.tensor(gt) / torch.tensor(duration) * num_frames).to(torch.int)
     with torch.no_grad():
         # print(sentences)
         text = model.tokenizer(sentences, padding='max_length', truncation=True, max_length=35, return_tensors="pt").to(
@@ -267,21 +267,26 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
     # start = gt[0]
     # end = gt[1]
     # plt.figure(figsize=(8, 8))
+
+    # # 범례에 사용할 빈 점 추가
+    # plt.scatter([], [], c='red', label='Ground Truth Moment', s=10)
+    # plt.scatter([], [], c='blue', label='Non-Ground Truth Moment', s=10)
+
     # for i, (x, y) in enumerate(tsne_features):
     #     color = 'red' if start <= i <= end else 'blue'
     #     plt.scatter(x, y, c=color, s=10)
-    #     plt.text(x, y - 0.1, str(i), fontsize=8, ha='center')  # Show index slightly below the point
+    #     # plt.text(x, y - 0.1, str(i), fontsize=8, ha='center')  # Show index slightly below the point
 
     # plt.title("t-SNE of Single-Frame Features with Indices")
     # plt.legend()
     # # os.makedirs('./tsne', exist_ok=True)
     # # plt.savefig(f"./tsne/tsne_features_{sentences}.png")
     # os.makedirs('./tsne_activitynet', exist_ok=True)
-    # plt.savefig(f"./tsne_activitynet/tsne_features_{sentences}.png")
+    # plt.savefig(f"./tsne_activitynet_test/tsne_features_{sentences}.png")
     ### feature t-SNE 저장
 
     #### 비디오 프레임 벡터 스무딩 (글로벌)
-    smooth_kernel_size = 21
+    smooth_kernel_size = 11
     smooth_padding = smooth_kernel_size // 2
     padding_selected_video_time_features_global = torch.cat((selected_video_time_features[0].repeat(smooth_padding, 1), selected_video_time_features, selected_video_time_features[-1].repeat(smooth_padding, 1)), dim=0)
     kernel = torch.ones(padding_selected_video_time_features_global.shape[1], 1, smooth_kernel_size).cuda() / smooth_kernel_size
@@ -310,18 +315,23 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
     # # Plot t-SNE with indices, using red color for points within the timestamp range
     # start = gt[0]
     # end = gt[1]
+    
     # plt.figure(figsize=(8, 8))
+    # # 범례에 사용할 빈 점 추가
+    # plt.scatter([], [], c='red', label='Ground Truth Moment', s=10)
+    # plt.scatter([], [], c='blue', label='Non-Ground Truth Moment', s=10)
+    
     # for i, (x, y) in enumerate(tsne_features):
     #     color = 'red' if start <= i <= end else 'blue'
     #     plt.scatter(x, y, c=color, s=10)
-    #     plt.text(x, y - 0.1, str(i), fontsize=8, ha='center')  # Show index slightly below the point
+    #     # plt.text(x, y - 0.1, str(i), fontsize=8, ha='center')  # Show index slightly below the point
 
     # plt.title("t-SNE of Global Features with Indices")
     # plt.legend()
     # # os.makedirs('./tsne_global', exist_ok=True)
     # # plt.savefig(f"./tsne_global/tsne_global_features_{sentences}.png")
-    # os.makedirs('./tsne_global_activitynet', exist_ok=True)
-    # plt.savefig(f"./tsne_global_activitynet/tsne_global_features_{sentences}.png")
+    # os.makedirs('./tsne_global_activitynet_test', exist_ok=True)
+    # plt.savefig(f"./tsne_global_activitynet_test/tsne_global_features_{sentences}.png")
     ### feature t-SNE 저장
 
     #### K-means 클러스터링 적용 (글로벌)
