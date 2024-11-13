@@ -256,9 +256,11 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
     # # Normalize features
     # normalized_features = torch.nn.functional.normalize(selected_video_time_features, p=2, dim=1)
     # normalized_features_np = normalized_features.detach().cpu().numpy()
+    # n_samples = normalized_features_np.shape[0]
+    # perplexity = min(30, n_samples - 1)
 
     # # Apply t-SNE
-    # tsne = TSNE(n_components=2, random_state=42)
+    # tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity)
     # tsne_features = tsne.fit_transform(normalized_features_np)
 
     # # Plot t-SNE with indices, using red color for points within the timestamp range
@@ -298,9 +300,11 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
     # # Normalize features
     # normalized_features = torch.nn.functional.normalize(selected_video_time_features_global, p=2, dim=1)
     # normalized_features_np = normalized_features.detach().cpu().numpy()
+    # n_samples = normalized_features_np.shape[0]
+    # perplexity = min(30, n_samples - 1)
 
     # # Apply t-SNE
-    # tsne = TSNE(n_components=2, random_state=42)
+    # tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity)
     # tsne_features = tsne.fit_transform(normalized_features_np)
 
     # # Plot t-SNE with indices, using red color for points within the timestamp range
