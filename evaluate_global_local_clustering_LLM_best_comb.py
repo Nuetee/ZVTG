@@ -24,7 +24,6 @@ def calc_iou(candidates, gt):
     union = np.maximum(end, e) - np.minimum(start, s)
     return inter.clip(min=0) / union
 
-
 def eval_with_llm(data, dataset_name, feature_path, stride, max_stride_factor):
     best_recall = np.array([0, 0, 0])
     best_miou = 0
@@ -39,7 +38,7 @@ def eval_with_llm(data, dataset_name, feature_path, stride, max_stride_factor):
     elif dataset_name == 'activitynet':
         temporal_window_size = 25
         gamma_list = [0.2, 0.4, 0.8]
-        cand_num_list = [15, 16, 17, 18, 19, 20, 21, 22]
+        cand_num_list = [7, 8, 9, 10, 11, 12, 13, 14]
         prior_list = [1]
     
     best_gamma = 0
@@ -57,11 +56,17 @@ def eval_with_llm(data, dataset_name, feature_path, stride, max_stride_factor):
                 for vid, ann in pbar:
                     duration = ann['duration']
                     video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
-                    num_frames = video_feature.shape[0]
+
                     for i in range(len(ann['sentences'])):
                         # query
                         query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-                        proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma, cand_num, kmeans_k, prior, temporal_window_size, use_llm=False)
+                        proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=3, kmeans_k=7, prior=0.5, use_llm=True)
+                        
+                        if 'query_json' in ann['response'][i]:
+                            for j in range(len(ann['response'][i]['query_json'][0]['descriptions'])):
+                                query_json = [{'descriptions': ann['response'][i]['query_json'][0]['descriptions'][j], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
+                                proposals += localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=3, kmeans_k=7, prior=0.5, use_llm=True)
+                        
                         gt = ann['timestamps'][i]
                         iou_ = calc_iou(proposals[:1], gt)[0]
                         ious.append(max(iou_, 0))
@@ -91,6 +96,38 @@ def eval_with_llm(data, dataset_name, feature_path, stride, max_stride_factor):
     print(f'Best cand num: {best_cand_num}')
     print(f'Best prioir: {best_prior}')
 
+def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
+    ious = []
+    thresh = np.array([0.3, 0.5, 0.7])
+    recall = np.array([0, 0, 0])
+    pbar = tqdm(data.items())
+
+    for vid, ann in pbar:
+        duration = ann['duration']
+        video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
+        for i in range(len(ann['sentences'])):
+            # query
+            query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
+            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=3, kmeans_k=7, prior=0.5, use_llm=True)
+            
+            if 'query_json' in ann['response'][i]:
+                for j in range(len(ann['response'][i]['query_json'][0]['descriptions'])):
+                    query_json = [{'descriptions': ann['response'][i]['query_json'][0]['descriptions'][j], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
+                    proposals += localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=3, kmeans_k=7, prior=0.5, use_llm=True)
+
+            proposals = select_proposal(np.array(proposals))
+            gt = ann['timestamps'][i]
+            iou_ = calc_iou(proposals[:1], gt)[0]
+            ious.append(max(iou_, 0))
+            recall += thresh <= iou_
+
+        pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
+
+    print('mIoU:', sum(ious) / len(ious))
+    for th, r in zip(thresh, recall):
+        print(f'R@{th}:', r / len(ious))
+
+
 def eval(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     ious = []
     thresh = np.array([0.3, 0.5, 0.7])
@@ -98,10 +135,6 @@ def eval(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     
     pbar = tqdm(data.items())
     for vid, ann in pbar:
-        query_json = []
-        for i in range(len(ann['sentences'])):
-            query_json.append({'descriptions': [ann['sentences'][i]]})
-
         duration = ann['duration'] if 'duration' in ann else ann['video_duration']
         video_feature_path = os.path.join(feature_path, vid+'.npy')
         video_feature = np.load(video_feature_path)
@@ -110,12 +143,14 @@ def eval(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
             video_feature = np.concatenate([pad_noise, video_feature], axis=0)
             duration += pad_sec
 
-        ans = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor))
-        for i in range(len(ans)):
+        for i in range(len(ann['sentences'])):
+            query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': duration}]
+            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=3, kmeans_k=7, prior=0.5, use_llm=True)
             s, e = ann['timestamps'][i]
             s, e = s + pad_sec, e + pad_sec
 
-            sp, ep = ans[i]['response'][0]['start'], ans[i]['response'][0]['end']
+            sp, ep = proposals[0][0],  proposals[0][1]
+   
             iou_ = (min(e, ep) - max(s, sp)) / (max(e, ep) - min(s, sp))
             ious.append(max(iou_, 0))
             recall += thresh <= iou_
@@ -168,7 +203,7 @@ if __name__=='__main__':
         if args.llm_output and os.path.exists(args.llm_output):
             with open(args.llm_output) as f:
                 data = json.load(f)
-            eval_with_llm(data, args.dataset, dataset['feature_path'], dataset['stride'], dataset['max_stride_factor'])
+            eval_with_llm(data, dataset['feature_path'], dataset['stride'], dataset['max_stride_factor'], dataset['splits'][args.split]['pad_sec'])
         else:
             with open(dataset['splits'][args.split]['annotation_file']) as f:
                 data = json.load(f)
