@@ -25,56 +25,69 @@ def calc_iou(candidates, gt):
     return inter.clip(min=0) / union
 
 
-def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
+def eval_with_llm(data, dataset_name, feature_path, stride, max_stride_factor):
     best_recall = np.array([0, 0, 0])
     best_miou = 0
+    
+    kmeans_k = 4
+    if dataset_name == 'charades':
+        gamma_list = [0.2]
+        cand_num_list = [6, 7, 8, 9, 10, 11, 12]
+        prior_list = [0.5, 0.6, 0.7]
 
-    # 그리드 서치를 위한 파라미터 범위
-    gamma_list = [0, 0.2, 0.4, 0.6, 0.8, 1]
-    cand_num_list = [5, 6, 8, 10, 12]
+    elif dataset_name == 'activitynet':
+        gamma_list = [0.2, 0.4, 0.8]
+        cand_num_list = [15, 16, 17, 18, 19, 20, 21, 22]
+        prior_list = [1]
+    
     best_gamma = 0
-    best_cand_num = 5
+    best_cand_num = 0
+    best_prior = 0
 
     for gamma in gamma_list:
         for cand_num in cand_num_list:
-            ious = []
-            thresh = np.array([0.3, 0.5, 0.7])
-            recall = np.array([0, 0, 0])
-            pbar = tqdm(data.items())
-            for vid, ann in pbar:
-                duration = ann['duration']
-                video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
-                num_frames = video_feature.shape[0]
-                for i in range(len(ann['sentences'])):
-                    # query
-                    query_json = [{'descriptions': ann['sentences'][i], 'masked_descriptions': ann['masked'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-                    proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma, cand_num)
-                    gt = ann['timestamps'][i]
-                    iou_ = calc_iou(proposals[:1], gt)[0]
-                    ious.append(max(iou_, 0))
-                    recall += thresh <= iou_
+            for prior in prior_list:
+                ious = []
+                thresh = np.array([0.3, 0.5, 0.7])
+                recall = np.array([0, 0, 0])
+                print(f"Dataset: {dataset_name}, (k, gamma, cand_num, prior): ({kmeans_k}, {gamma}, {cand_num}, {prior})")
+                pbar = tqdm(data.items())
+                for vid, ann in pbar:
+                    duration = ann['duration']
+                    video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
+                    num_frames = video_feature.shape[0]
+                    for i in range(len(ann['sentences'])):
+                        # query
+                        query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
+                        proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma, cand_num, kmeans_k, prior, use_llm=False)
+                        gt = ann['timestamps'][i]
+                        iou_ = calc_iou(proposals[:1], gt)[0]
+                        ious.append(max(iou_, 0))
+                        recall += thresh <= iou_
 
+                    pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
 
-                # pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
-                pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
-
-            # mIoU 계산
-            current_miou = sum(ious) / len(ious) if len(ious) > 0 else 0
-            if current_miou > best_miou:
-                best_miou = current_miou
-                best_recall = recall
-                best_gamma = gamma
-                best_cand_num= cand_num
-        
-            print(f'mIoU - {gamma}/{cand_num}: {current_miou}')
+                # mIoU 계산
+                current_miou = sum(ious) / len(ious) if len(ious) > 0 else 0
+                if current_miou > best_miou:
+                    best_miou = current_miou
+                    best_recall = recall
+                    best_gamma = gamma
+                    best_cand_num = cand_num
+                    best_prior = prior
+            
+                print(f'mIoU-{gamma}/{cand_num}/{prior}: {current_miou}')
+                for th, r in zip(thresh, recall):
+                    print(f'R@{th}:', r / len(ious))
 
     # 최적의 조합 출력
-    print('K: 4')
+    print(f"K: {kmeans_k}")
     print('Best mIoU:', best_miou)
     for th, r in zip(thresh, best_recall):
         print(f'R@{th}:', r / len(ious))
     print(f'Best gamma: {best_gamma}')
     print(f'Best cand num: {best_cand_num}')
+    print(f'Best prioir: {best_prior}')
 
 def eval(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     ious = []
@@ -153,7 +166,7 @@ if __name__=='__main__':
         if args.llm_output and os.path.exists(args.llm_output):
             with open(args.llm_output) as f:
                 data = json.load(f)
-            eval_with_llm(data, dataset['feature_path'], dataset['stride'], dataset['max_stride_factor'], dataset['splits'][args.split]['pad_sec'])
+            eval_with_llm(data, args.dataset, dataset['feature_path'], dataset['stride'], dataset['max_stride_factor'])
         else:
             with open(dataset['splits'][args.split]['annotation_file']) as f:
                 data = json.load(f)

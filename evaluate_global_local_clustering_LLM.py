@@ -36,12 +36,12 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
         for i in range(len(ann['sentences'])):
             # query
             query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=12, kmeans_k=7, prior=0.5, use_llm_cand_num=3, use_llm=True)
+            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=3, kmeans_k=7, prior=0.5, use_llm=True)
             
             if 'query_json' in ann['response'][i]:
                 for j in range(len(ann['response'][i]['query_json'][0]['descriptions'])):
                     query_json = [{'descriptions': ann['response'][i]['query_json'][0]['descriptions'][j], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-                    proposals += localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=12, kmeans_k=7, prior=0.5, use_llm_cand_num=3, use_llm=True)
+                    proposals += localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=3, kmeans_k=7, prior=0.5, use_llm=True)
 
             proposals = select_proposal(np.array(proposals))
             gt = ann['timestamps'][i]
@@ -73,12 +73,12 @@ def eval(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
 
         for i in range(len(ann['sentences'])):
             query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': duration}]
-            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=12, kmeans_k=7, prior=0.5)
+            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=3, kmeans_k=7, prior=0.5, use_llm=True)
             s, e = ann['timestamps'][i]
             s, e = s + pad_sec, e + pad_sec
 
             sp, ep = proposals[0][0],  proposals[0][1]
-            # import pdb;pdb.set_trace()
+   
             iou_ = (min(e, ep) - max(s, sp)) / (max(e, ep) - min(s, sp))
             ious.append(max(iou_, 0))
             recall += thresh <= iou_

@@ -461,7 +461,7 @@ def generate_proposal(video_features, sentences, gt, duration, stride, max_strid
     return [final_proposals], [final_scores], [final_prefix], scores, cum_scores, num_frames
 
 
-def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num, kmeans_k, prior, use_llm_cand_num=3, use_llm=False):
+def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num, kmeans_k, prior, use_llm=False):
     answer = []
     for query in query_json:
         # import pdb; pdb.set_trace()
@@ -474,16 +474,8 @@ def localize(video_feature, duration, query_json, stride, max_stride, gamma, can
         else:
             static_pred = proposals[0][:cand_num]
             dynamic_pred = pre_proposals[0][:cand_num]
-            # scores = gmm_scores[:10]
-            # scores = scores / scores.max()
             scores = scores[0][:cand_num]
             scores = scores / scores.max()
-
-
-            # if scores.min() < 0:
-            #     scores = scores + (-scores.min() + 1e-4)
-            # scores = scores / scores.max()
-            # scores = scores + (1- scores.max()) #### 공사중
 
         query['response'] = []
         for i in range(len(static_pred)):
@@ -503,7 +495,7 @@ def localize(video_feature, duration, query_json, stride, max_stride, gamma, can
     proposals[:,:2] = proposals[:,:2] / num_frames * duration
     
     if use_llm:
-        return list(proposals[:use_llm_cand_num])
+        return list(proposals[:cand_num])
     
     post_proposals = proposals
     np.set_printoptions(precision=4, suppress=True)
