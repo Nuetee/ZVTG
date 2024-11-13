@@ -60,12 +60,12 @@ def eval_with_llm(data, dataset_name, feature_path, stride, max_stride_factor):
                     for i in range(len(ann['sentences'])):
                         # query
                         query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-                        proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=3, kmeans_k=7, prior=0.5, use_llm=True)
+                        proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma, cand_num, kmeans_k, prior, temporal_window_size, use_llm=True)
                         
                         if 'query_json' in ann['response'][i]:
                             for j in range(len(ann['response'][i]['query_json'][0]['descriptions'])):
                                 query_json = [{'descriptions': ann['response'][i]['query_json'][0]['descriptions'][j], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-                                proposals += localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=3, kmeans_k=7, prior=0.5, use_llm=True)
+                                proposals += localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma, cand_num, kmeans_k, prior, temporal_window_size, use_llm=True)
                         
                         gt = ann['timestamps'][i]
                         iou_ = calc_iou(proposals[:1], gt)[0]
