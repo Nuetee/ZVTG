@@ -66,7 +66,8 @@ def eval_with_llm(data, dataset_name, feature_path, stride, max_stride_factor):
                             for j in range(len(ann['response'][i]['query_json'][0]['descriptions'])):
                                 query_json = [{'descriptions': ann['response'][i]['query_json'][0]['descriptions'][j], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
                                 proposals += localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma, cand_num, kmeans_k, prior, temporal_window_size, use_llm=True)
-                        
+
+                        proposals = select_proposal(np.array(proposals))
                         gt = ann['timestamps'][i]
                         iou_ = calc_iou(proposals[:1], gt)[0]
                         ious.append(max(iou_, 0))
