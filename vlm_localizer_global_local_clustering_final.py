@@ -189,51 +189,51 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
     masked_indices = torch.nonzero(masks, as_tuple=True)[0]  # 마스킹된 실제 인덱스 저장
     
     #### w/o sim score norm ####
-    masked_scores = scores[:, masks]
-    cum_scores = torch.cumsum(masked_scores, dim=1)[0]
+    # masked_scores = scores[:, masks]
+    # cum_scores = torch.cumsum(masked_scores, dim=1)[0]
     #### w/o sim score norm ####
     
     #### Similarity score noramlization ####
-    # device = scores.device
-    # data = scores[:, masks].flatten().cpu().numpy()   # 마스크된 부분만 가져오기
-    # # 작은 상수 추가로 양수 데이터 보장
-    # epsilon = 1e-6
-    # data = data + abs(data.min()) + epsilon if np.any(data <= 0) else data
+    device = scores.device
+    data = scores[:, masks].flatten().cpu().numpy()   # 마스크된 부분만 가져오기
+    # 작은 상수 추가로 양수 데이터 보장
+    epsilon = 1e-6
+    data = data + abs(data.min()) + epsilon if np.any(data <= 0) else data
     
-    # def boxcox_transformed(x, lmbda):
-    #     if lmbda == 0:
-    #         return np.log(x)
-    #     else:
-    #         return (x**lmbda - 1) / lmbda
+    def boxcox_transformed(x, lmbda):
+        if lmbda == 0:
+            return np.log(x)
+        else:
+            return (x**lmbda - 1) / lmbda
 
-    # # 최적의 lambda를 찾기 위한 로그 가능도 함수 (최소화할 함수)
-    # def neg_log_likelihood(lmbda):
-    #     transformed_data = boxcox_transformed(data, lmbda)
-    #     # 분산 계산 시 overflow 방지
-    #     var = np.var(transformed_data, ddof=1)
-    #     return -np.sum(np.log(np.abs(transformed_data))) + 0.5 * len(data) * np.log(var)
+    # 최적의 lambda를 찾기 위한 로그 가능도 함수 (최소화할 함수)
+    def neg_log_likelihood(lmbda):
+        transformed_data = boxcox_transformed(data, lmbda)
+        # 분산 계산 시 overflow 방지
+        var = np.var(transformed_data, ddof=1)
+        return -np.sum(np.log(np.abs(transformed_data))) + 0.5 * len(data) * np.log(var)
 
-    # # lambda 범위 내에서 최적화
-    # result = minimize_scalar(neg_log_likelihood, bounds=(-2, 2), method='bounded')
-    # best_lambda = result.x
+    # lambda 범위 내에서 최적화
+    result = minimize_scalar(neg_log_likelihood, bounds=(-2, 2), method='bounded')
+    best_lambda = result.x
     
-    # # 최적의 lambda로 변환 데이터 생성
-    # transformed_data = boxcox_transformed(data, best_lambda)
+    # 최적의 lambda로 변환 데이터 생성
+    transformed_data = boxcox_transformed(data, best_lambda)
 
-    # original_min, original_max = data.min(), data.max()
-    # transformed_min, transformed_max = transformed_data.min(), transformed_data.max()
-    # transformed_data = (transformed_data - transformed_min) / (transformed_max - transformed_min)  # normalize to [0, 1]
-    # is_scale = False
-    # if original_max - original_min > gamma:
-    #     is_scale = True
-    #     transformed_data = transformed_data * (original_max - original_min) + original_min  # scale to original min/max
-    # else:
-    #     transformed_data = transformed_data * (gamma) + original_min
-    # # 변환 결과를 다시 텐서로 변환하고 원래 형태로 복원
+    original_min, original_max = data.min(), data.max()
+    transformed_min, transformed_max = transformed_data.min(), transformed_data.max()
+    transformed_data = (transformed_data - transformed_min) / (transformed_max - transformed_min)  # normalize to [0, 1]
+    is_scale = False
+    if original_max - original_min > gamma:
+        is_scale = True
+        transformed_data = transformed_data * (original_max - original_min) + original_min  # scale to original min/max
+    else:
+        transformed_data = transformed_data * (gamma) + original_min
+    # 변환 결과를 다시 텐서로 변환하고 원래 형태로 복원
 
-    # normalized_scores = torch.tensor(transformed_data, device=device).unsqueeze(0)
+    normalized_scores = torch.tensor(transformed_data, device=device).unsqueeze(0)
 
-    # cum_scores = torch.cumsum(normalized_scores, dim=1)[0]
+    cum_scores = torch.cumsum(normalized_scores, dim=1)[0]
     #### Similarity score noramlization ####
     
     #### save sim score ####
