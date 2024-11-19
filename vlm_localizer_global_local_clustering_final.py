@@ -251,39 +251,49 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
 
     ### feature t-SNE 저장
     # region
-    # import matplotlib.pyplot as plt
-    # from sklearn.manifold import TSNE
+    # if sentences == ' men are walking outside a tent and doing balance on top of a rope.':
+    #     import matplotlib.pyplot as plt
+    #     from sklearn.manifold import TSNE
+    #     from adjustText import adjust_text
+        
+    #     # Normalize features
+    #     normalized_features = torch.nn.functional.normalize(selected_video_time_features, p=2, dim=1)
+    #     normalized_features_np = normalized_features.detach().cpu().numpy()
+    #     n_samples = normalized_features_np.shape[0]
+    #     perplexity = min(30, n_samples - 1)
 
-    # # Normalize features
-    # normalized_features = torch.nn.functional.normalize(selected_video_time_features, p=2, dim=1)
-    # normalized_features_np = normalized_features.detach().cpu().numpy()
-    # n_samples = normalized_features_np.shape[0]
-    # perplexity = min(30, n_samples - 1)
+    #     # Apply t-SNE
+    #     tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity)
+    #     tsne_features = tsne.fit_transform(normalized_features_np)
 
-    # # Apply t-SNE
-    # tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity)
-    # tsne_features = tsne.fit_transform(normalized_features_np)
+    #     # Plot t-SNE with indices, using red color for points within the timestamp range
+    #     start = gt[0]
+    #     end = gt[1]
+    #     plt.figure(figsize=(12, 8))
 
-    # # Plot t-SNE with indices, using red color for points within the timestamp range
-    # start = gt[0]
-    # end = gt[1]
-    # plt.figure(figsize=(8, 8))
+    #     # 범례에 사용할 빈 점 추가
+    #     plt.scatter([], [], c='red', label='Ground Truth Segment', s=35)
+    #     plt.scatter([], [], c='blue', label='Non-Ground Truth Segment', s=35)
 
-    # # 범례에 사용할 빈 점 추가
-    # plt.scatter([], [], c='red', label='Ground Truth Moment', s=10)
-    # plt.scatter([], [], c='blue', label='Non-Ground Truth Moment', s=10)
+    #     # texts = []
+    #     for i, (x, y) in enumerate(tsne_features):
+    #         color = 'red' if start <= i <= end else 'blue'
+    #         plt.scatter(x, y, c=color, s=35)
+    #         # if start <= i <= end:
+    #         #     text = plt.text(x, y, str(i), fontsize=10, ha='center')  # Add text only for gt segment
+    #         #     texts.append(text)
 
-    # for i, (x, y) in enumerate(tsne_features):
-    #     color = 'red' if start <= i <= end else 'blue'
-    #     plt.scatter(x, y, c=color, s=10)
-    #     # plt.text(x, y - 0.1, str(i), fontsize=8, ha='center')  # Show index slightly below the point
+    #     # Adjust text to prevent overlap
+    #     # adjust_text(texts, only_move={'points': 'y', 'texts': 'y'}, autoalign='y', force_text=0.5)
 
-    # plt.title("t-SNE of Single-Frame Features with Indices")
-    # plt.legend()
-    # # os.makedirs('./tsne', exist_ok=True)
-    # # plt.savefig(f"./tsne/tsne_features_{sentences}.png")
-    # os.makedirs('./tsne_activitynet', exist_ok=True)
-    # plt.savefig(f"./tsne_activitynet_test/tsne_features_{sentences}.png")
+    #     # plt.title("t-SNE of Single-Frame Features with Indices")
+    #     plt.tick_params(axis='both', which='major', labelsize=14)
+
+    #     plt.legend(fontsize=18, loc="lower right")
+    #     # os.makedirs('./tsne', exist_ok=True)
+    #     # plt.savefig(f"./tsne/tsne_features_{sentences}.png")
+    #     os.makedirs('./tsne_activitynet', exist_ok=True)
+    #     plt.savefig(f"./tsne_activitynet_test/tsne_features_{sentences}.png")
     # endregion
     ### feature t-SNE 저장
 
@@ -302,39 +312,48 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
 
     ### feature t-SNE 저장
     # region
-    # import matplotlib.pyplot as plt
-    # from sklearn.manifold import TSNE
+    # if sentences == ' men are walking outside a tent and doing balance on top of a rope.':
+    #     import matplotlib.pyplot as plt
+    #     from sklearn.manifold import TSNE
 
-    # # Normalize features
-    # normalized_features = torch.nn.functional.normalize(selected_video_time_features_global, p=2, dim=1)
-    # normalized_features_np = normalized_features.detach().cpu().numpy()
-    # n_samples = normalized_features_np.shape[0]
-    # perplexity = min(30, n_samples - 1)
+    #     # Normalize features
+    #     normalized_features = torch.nn.functional.normalize(selected_video_time_features_global, p=2, dim=1)
+    #     normalized_features_np = normalized_features.detach().cpu().numpy()
+    #     n_samples = normalized_features_np.shape[0]
+    #     perplexity = min(30, n_samples - 1)
 
-    # # Apply t-SNE
-    # tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity)
-    # tsne_features = tsne.fit_transform(normalized_features_np)
+    #     # Apply t-SNE
+    #     tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity)
+    #     tsne_features = tsne.fit_transform(normalized_features_np)
 
-    # # Plot t-SNE with indices, using red color for points within the timestamp range
-    # start = gt[0]
-    # end = gt[1]
-    
-    # plt.figure(figsize=(8, 8))
-    # # 범례에 사용할 빈 점 추가
-    # plt.scatter([], [], c='red', label='Ground Truth Moment', s=10)
-    # plt.scatter([], [], c='blue', label='Non-Ground Truth Moment', s=10)
-    
-    # for i, (x, y) in enumerate(tsne_features):
-    #     color = 'red' if start <= i <= end else 'blue'
-    #     plt.scatter(x, y, c=color, s=10)
-    #     # plt.text(x, y - 0.1, str(i), fontsize=8, ha='center')  # Show index slightly below the point
+    #     # Plot t-SNE with indices, using red color for points within the timestamp range
+    #     start = gt[0]
+    #     end = gt[1]
+        
+    #     plt.figure(figsize=(12, 8))  # 가로 길이를 늘리기 위해 figsize 수정
+    #     # 범례에 사용할 빈 점 추가
+    #     plt.scatter([], [], c='red', label='Ground Truth Segment', s=35)
+    #     plt.scatter([], [], c='blue', label='Non-Ground Truth Segment', s=35)
+        
+    #     for i, (x, y) in enumerate(tsne_features):
+    #         color = 'red' if start <= i <= end else 'blue'
+    #         plt.scatter(x, y, c=color, s=35)
+    #         # if start <= i <= end:
+    #         #     text = plt.text(x, y, str(i), fontsize=10, ha='center')  # Add text only for gt segment
+    #         #     texts.append(text)
 
-    # plt.title("t-SNE of Global Features with Indices")
-    # plt.legend()
-    # # os.makedirs('./tsne_global', exist_ok=True)
-    # # plt.savefig(f"./tsne_global/tsne_global_features_{sentences}.png")
-    # os.makedirs('./tsne_global_activitynet_test', exist_ok=True)
-    # plt.savefig(f"./tsne_global_activitynet_test/tsne_global_features_{sentences}.png")
+    #     # Adjust text to prevent overlap
+    #     # adjust_text(texts, only_move={'points': 'y', 'texts': 'y'}, autoalign='y', force_text=0.5)
+
+    #     # plt.title("t-SNE of Global Features with Indices")
+    #     plt.tick_params(axis='both', which='major', labelsize=14)
+
+    #     plt.legend(fontsize=18, loc="lower right")
+    #     # os.makedirs('./tsne_global', exist_ok=True)
+    #     # plt.savefig(f"./tsne_global/tsne_global_features_{sentences}.png")
+    #     os.makedirs('./tsne_global_activitynet_test', exist_ok=True)
+    #     plt.savefig(f"./tsne_global_activitynet_test/tsne_global_features_{sentences}.png")
+    #     import pdb;pdb.set_trace()
     # endregion
     ### feature t-SNE 저장
 
