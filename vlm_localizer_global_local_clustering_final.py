@@ -1,4 +1,5 @@
 import os
+import clip
 from tqdm import tqdm
 import torch
 import numpy as np
@@ -14,6 +15,11 @@ model, vis_processors, text_processors = load_model_and_preprocess("blip2_image_
 vis_processors = transforms.Compose([
     t for t in vis_processors['eval'].transform.transforms if not isinstance(t, transforms.ToTensor)
 ])
+
+clip_model, preprocess = clip.load("ViT-L/14", device='cuda')
+
+# Extract the text encoder
+clip_text_encoder = clip_model.encode_text
 
 
 def nms(moments, scores, pre_mom, pre_score, thresh):
@@ -146,23 +152,33 @@ def plot_scores(scores, normalized_scores, timestamps, filename="scores_plot.png
     plt.savefig(filename)
     plt.close()  # 메모리 절약을 위해 그래프 닫기
 
-def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=1, temporal_window_size=21):
+def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=1, temporal_window_size=21, is_clip=False):
     num_frames = video_features.shape[0]
     gt = torch.round(torch.tensor(gt) / torch.tensor(duration) * num_frames).to(torch.int)
-    with torch.no_grad():
-        # print(sentences)
-        text = model.tokenizer(sentences, padding='max_length', truncation=True, max_length=35, return_tensors="pt").to(
-            'cuda')
-        text_output = model.Qformer.bert(text.input_ids, attention_mask=text.attention_mask, return_dict=True)
-        text_feat = model.text_proj(text_output.last_hidden_state[:, 0, :])
-    v1 = F.normalize(text_feat, dim=-1)
-    v2 = F.normalize(torch.tensor(video_features, device='cuda', dtype=v1.dtype), dim=-1)
-    scores = torch.einsum('md,npd->mnp', v1, v2)
-    scores, scores_idx = scores.max(dim=-1)
-    scores = scores.mean(dim=0, keepdim=True)
-
+    # import pdb;pdb.set_trace()
+    if is_clip:
+        with torch.no_grad():
+           text_tokens = clip.tokenize(sentences).to(device='cuda')
+           text_feat = clip_text_encoder(text_tokens)
+        v1 = F.normalize(text_feat, p=2, dim=1)  # Normalize along feature dimension
+        v2 = F.normalize(torch.tensor(video_features, device='cuda', dtype=v1.dtype), p=2, dim=1)  # Normalize along feature dimension
+        scores = torch.matmul(v2, v1.T).squeeze()
+        scores = scores.unsqueeze(0)
+    else:
+        with torch.no_grad():
+            # print(sentences)
+            text = model.tokenizer(sentences, padding='max_length', truncation=True, max_length=35, return_tensors="pt").to(
+                'cuda')
+            text_output = model.Qformer.bert(text.input_ids, attention_mask=text.attention_mask, return_dict=True)
+            text_feat = model.text_proj(text_output.last_hidden_state[:, 0, :])
+        v1 = F.normalize(text_feat, dim=-1)
+        v2 = F.normalize(torch.tensor(video_features, device='cuda', dtype=v1.dtype), dim=-1)
+        scores = torch.einsum('md,npd->mnp', v1, v2)
+        scores, scores_idx = scores.max(dim=-1)
+        scores = scores.mean(dim=0, keepdim=True)
+    # pdb.set_trace()
     # scores > 0.2인 마스킹 생성 (Boolean 형태 유지)
-    initial_mask = (scores > 0.2)  # 0.2 이하 값은 False, 나머지는 True
+    initial_mask = (scores > 0 if is_clip else scores > 0.2)  # 0.2 이하 값은 False, 나머지는 True
 
     # scores의 길이가 3 미만인 경우 예외 처리
     if scores.shape[1] < 3:
@@ -241,14 +257,17 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
     # gt_frame = [int(round(x / duration * num_frames)) for x in gt]
     # plot_scores(scores, normalized_scores, gt_frame, filename=f"./sim_score/{revise_sentences}.png")
     #### save sim score ####
-
-    scores_idx = scores_idx.reshape(-1)
+    # pdb.set_trace()
     video_features = torch.tensor(video_features).cuda()
-    selected_video_features = video_features[torch.arange(num_frames), scores_idx]
+    if is_clip:
+        selected_video_features = video_features
+    else:
+        scores_idx = scores_idx.reshape(-1)
+        selected_video_features = video_features[torch.arange(num_frames), scores_idx]
     time_features = (torch.arange(num_frames) / num_frames).unsqueeze(1).cuda()
     selected_video_time_features = torch.cat((selected_video_features, time_features), dim=1)
     selected_video_time_features = selected_video_time_features[masks]
-
+    # pdb.set_trace()
     ### feature t-SNE 저장
     # region
     # if sentences == ' men are walking outside a tent and doing balance on top of a rope.':
@@ -359,7 +378,7 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
 
     #### K-means 클러스터링 적용 (글로벌)
     if len(masked_indices) < kmeans_k:
-        kmeans_k = 2
+        kmeans_k = min(len(masked_indices), 2)
     kmeans = KMeans(n_clusters=kmeans_k, n_init=10, random_state=42)
     kmeans_labels_global = kmeans.fit_predict(np.array(selected_video_time_features_global.cpu()))
     kmeans_labels_global = torch.tensor(kmeans_labels_global)
@@ -451,10 +470,10 @@ def extract_avg_score(start, end, cum_scores, num_frames, scores):
     return avg_score
 
 
-def generate_proposal(video_features, sentences, gt, duration, stride, max_stride, gamma, kmeans_k, prior, temporal_window_size):
+def generate_proposal(video_features, sentences, gt, duration, stride, max_stride, gamma, kmeans_k, prior, temporal_window_size, is_clip):
     num_frames = video_features.shape[0]
     ground_truth = [round(gt[0] / duration * num_frames, 0), round(gt[1] / duration * num_frames, 0)]
-    scores, final_proposals, final_proposals_scores = calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior, temporal_window_size)
+    scores, final_proposals, final_proposals_scores = calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior, temporal_window_size, is_clip)
     cum_scores = torch.cumsum(scores, dim=1)[0]
 
     masks = (scores > 0.2).float()
@@ -484,12 +503,12 @@ def generate_proposal(video_features, sentences, gt, duration, stride, max_strid
     return [final_proposals], [final_scores], [final_prefix], scores, cum_scores, num_frames
 
 
-def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num, kmeans_k, prior, temporal_window_size, use_llm=False):
+def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num, kmeans_k, prior, temporal_window_size, use_llm=False, is_clip=False):
     answer = []
     for query in query_json:
         # import pdb; pdb.set_trace()
         gt = query['gt']
-        proposals, scores, pre_proposals, _, _, num_frames = generate_proposal(video_feature, query['descriptions'], gt, duration, stride, max_stride, gamma, kmeans_k, prior, temporal_window_size)
+        proposals, scores, pre_proposals, _, _, num_frames = generate_proposal(video_feature, query['descriptions'], gt, duration, stride, max_stride, gamma, kmeans_k, prior, temporal_window_size, is_clip)
         if len(proposals[0]) == 0:
             static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
             dynamic_pred = np.array([0.0, 0.0, 0.0])

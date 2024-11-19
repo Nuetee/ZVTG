@@ -1,5 +1,6 @@
 from data_configs import DATASETS
 import argparse
+import torch
 import numpy as np
 import json
 from tqdm import tqdm
@@ -24,7 +25,7 @@ def calc_iou(candidates, gt):
     union = np.maximum(end, e) - np.minimum(start, s)
     return inter.clip(min=0) / union
 
-def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
+def eval_with_llm(data, feature_path, stride, max_stride_factor, is_clip):
     ious = []
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
@@ -38,16 +39,22 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
 
     for vid, ann in pbar:
         duration = ann['duration']
-        video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
+        if is_clip:
+            video_feature = torch.load(os.path.join(feature_path, vid+'.pth'))
+            if isinstance(video_feature, torch.Tensor):
+                video_feature = video_feature.numpy()  # Convert PyTorch tensor to NumPy array
+        else:
+            video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
+
         for i in range(len(ann['sentences'])):
             # query
             query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=gamma, cand_num=cand_num, kmeans_k=kmeans_k, prior=prior, temporal_window_size=temporal_window_size, use_llm=use_llm)
+            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=gamma, cand_num=cand_num, kmeans_k=kmeans_k, prior=prior, temporal_window_size=temporal_window_size, use_llm=use_llm, is_clip=is_clip)
             
             if 'query_json' in ann['response'][i]:
                 for j in range(len(ann['response'][i]['query_json'][0]['descriptions'])):
                     query_json = [{'descriptions': ann['response'][i]['query_json'][0]['descriptions'][j], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-                    proposals += localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=gamma, cand_num=cand_num, kmeans_k=kmeans_k, prior=prior, temporal_window_size=temporal_window_size, use_llm=use_llm)
+                    proposals += localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=gamma, cand_num=cand_num, kmeans_k=kmeans_k, prior=prior, temporal_window_size=temporal_window_size, use_llm=use_llm, is_clip=is_clip)
 
             proposals = select_proposal(np.array(proposals))
             gt = ann['timestamps'][i]
@@ -137,7 +144,10 @@ if __name__=='__main__':
         if args.llm_output and os.path.exists(args.llm_output):
             with open(args.llm_output) as f:
                 data = json.load(f)
-            eval_with_llm(data, dataset['feature_path'], dataset['stride'], dataset['max_stride_factor'], dataset['splits'][args.split]['pad_sec'])
+            is_clip = False
+            if 'clip' in args.dataset:
+                is_clip = True
+            eval_with_llm(data, dataset['feature_path'], dataset['stride'], dataset['max_stride_factor'], is_clip)
         else:
             with open(dataset['splits'][args.split]['annotation_file']) as f:
                 data = json.load(f)
