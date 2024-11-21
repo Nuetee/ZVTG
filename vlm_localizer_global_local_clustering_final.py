@@ -152,7 +152,7 @@ def plot_scores(scores, normalized_scores, timestamps, filename="scores_plot.png
     plt.savefig(filename)
     plt.close()  # 메모리 절약을 위해 그래프 닫기
 
-def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=1, temporal_window_size=21, is_clip=False):
+def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=1, temporal_window_size=21, is_clip=False, is_blip=False):
     num_frames = video_features.shape[0]
     gt = torch.round(torch.tensor(gt) / torch.tensor(duration) * num_frames).to(torch.int)
     # import pdb;pdb.set_trace()
@@ -178,7 +178,7 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
         scores = scores.mean(dim=0, keepdim=True)
     # pdb.set_trace()
     # scores > 0.2인 마스킹 생성 (Boolean 형태 유지)
-    initial_mask = (scores > 0 if is_clip else scores > 0.2)  # 0.2 이하 값은 False, 나머지는 True
+    initial_mask = (scores > 0 if is_clip or is_blip else scores > 0.2)  # 0.2 이하 값은 False, 나머지는 True
 
     # scores의 길이가 3 미만인 경우 예외 처리
     if scores.shape[1] < 3:
@@ -470,10 +470,10 @@ def extract_avg_score(start, end, cum_scores, num_frames, scores):
     return avg_score
 
 
-def generate_proposal(video_features, sentences, gt, duration, stride, max_stride, gamma, kmeans_k, prior, temporal_window_size, is_clip):
+def generate_proposal(video_features, sentences, gt, duration, stride, max_stride, gamma, kmeans_k, prior, temporal_window_size, is_clip, is_blip):
     num_frames = video_features.shape[0]
     ground_truth = [round(gt[0] / duration * num_frames, 0), round(gt[1] / duration * num_frames, 0)]
-    scores, final_proposals, final_proposals_scores = calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior, temporal_window_size, is_clip)
+    scores, final_proposals, final_proposals_scores = calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior, temporal_window_size, is_clip, is_blip)
     cum_scores = torch.cumsum(scores, dim=1)[0]
 
     masks = (scores > 0.2).float()
@@ -503,12 +503,12 @@ def generate_proposal(video_features, sentences, gt, duration, stride, max_strid
     return [final_proposals], [final_scores], [final_prefix], scores, cum_scores, num_frames
 
 
-def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num, kmeans_k, prior, temporal_window_size, use_llm=False, is_clip=False):
+def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num, kmeans_k, prior, temporal_window_size, use_llm=False, is_clip=False, is_blip=False):
     answer = []
     for query in query_json:
         # import pdb; pdb.set_trace()
         gt = query['gt']
-        proposals, scores, pre_proposals, _, _, num_frames = generate_proposal(video_feature, query['descriptions'], gt, duration, stride, max_stride, gamma, kmeans_k, prior, temporal_window_size, is_clip)
+        proposals, scores, pre_proposals, _, _, num_frames = generate_proposal(video_feature, query['descriptions'], gt, duration, stride, max_stride, gamma, kmeans_k, prior, temporal_window_size, is_clip, is_blip)
         if len(proposals[0]) == 0:
             static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
             dynamic_pred = np.array([0.0, 0.0, 0.0])

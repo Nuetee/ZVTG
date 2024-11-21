@@ -61,6 +61,37 @@ DATASETS={
             },
         }
     },
+    'charades_blip': {
+        'feature_path': './datasets/Charades-BLIP/',
+        'stride': 20,
+        'max_stride_factor': 0.5,
+        'splits': {
+            'default': {
+                'annotation_file': 'dataset/charades-sta/charades_test.json',
+                'pad_sec': 0.0,
+            },
+            'OOD-1': {
+                'annotation_file': 'dataset/charades-sta/charades_test.json',
+                'pad_sec': 10.0,
+            },
+            'OOD-2': {
+                'annotation_file': 'dataset/charades-sta/charades_test.json',
+                'pad_sec': 15.0,
+            },
+            'test-ood': {
+                'annotation_file': 'dataset/charades-sta/charades_test_ood.json',
+                'pad_sec': 0.0,
+            },
+            'novel-composition': {
+                'annotation_file': 'dataset/charades-sta/novel_composition.json',
+                'pad_sec': 0.0,
+            },
+            'novel-word': {
+                'annotation_file': 'dataset/charades-sta/novel_word.json',
+                'pad_sec': 0.0,
+            },
+        }
+    },
     'activitynet': {
         'feature_path': './datasets/ActivityNet/',
         'stride': 40,

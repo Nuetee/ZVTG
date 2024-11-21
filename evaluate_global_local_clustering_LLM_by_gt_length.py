@@ -53,12 +53,12 @@ def eval_with_llm(data, dataset_name, feature_path, stride, max_stride_factor, p
         for i in range(len(ann['sentences'])):
             # query
             query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=gamma, cand_num=cand_num, kmeans_k=kmeans_k, prior=prior, temporal_window_size=temporal_window_size, use_llm=use_llm, is_clip=False)
+            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=gamma, cand_num=cand_num, kmeans_k=kmeans_k, prior=prior, temporal_window_size=temporal_window_size, use_llm=use_llm)
             
             if 'query_json' in ann['response'][i]:
                 for j in range(len(ann['response'][i]['query_json'][0]['descriptions'])):
                     query_json = [{'descriptions': ann['response'][i]['query_json'][0]['descriptions'][j], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-                    proposals += localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=gamma, cand_num=cand_num, kmeans_k=kmeans_k, prior=prior, temporal_window_size=temporal_window_size, use_llm=use_llm, is_clip=False)
+                    proposals += localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=gamma, cand_num=cand_num, kmeans_k=kmeans_k, prior=prior, temporal_window_size=temporal_window_size, use_llm=use_llm)
 
             proposals = select_proposal(np.array(proposals))
             gt = ann['timestamps'][i]
