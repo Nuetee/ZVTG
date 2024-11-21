@@ -131,6 +131,41 @@ def masking(client, prompt, source_path, save_path):
     with open(save_path, 'w') as f:
         json.dump(data, f, indent=4)
 
+from itertools import islice
+def example(client, prompt, source_path):
+    with open(source_path) as f:
+        data = json.load(f)
+    top_10_items = islice(data.items(), 10)
+    for key, value in tqdm(top_10_items):
+        # import pdb;pdb.set_trace()
+        sentences = value.get("sentences", [])
+         # 'response' 키 삭제
+        if 'response' in value:
+            del value['response']
+
+        for idx, sentence in enumerate(sentences):
+            user_content = "User input: \"" + sentence + "\""
+            completion = client.chat.completions.create(
+                model="gpt-4-turbo",
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": user_content }
+                ]
+            )
+            
+            if "masked" not in value:
+                value["masked"] = []
+
+            content = completion.choices[0].message.content
+            
+            print(content)
+            # try:
+            #     masked = json.loads(content)
+            # except json.JSONDecodeError:
+            #     print(f"Error parsing content: {content}")
+            #     continue
+            # value["masked"].append(masked)
+
 if __name__=='__main__':    
     client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", "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"))
     # region
@@ -237,84 +272,115 @@ if __name__=='__main__':
     # endregion
 
 
-    prompt_masking_task = """
-    Your task involves recognizing the subject, verb, object, and prepositional phrases in user text input describing human activities in a video. You will mask these elements with [MASK] one at a time and return the corresponding sentences. If the sentence contains more than one subject, verb, object, or prepositional phrase, return a separate sentence with each element masked in turn.
+    # prompt_masking_task = """
+    # Your task involves recognizing the subject, verb, object, and prepositional phrases in user text input describing human activities in a video. You will mask these elements with [MASK] one at a time and return the corresponding sentences. If the sentence contains more than one subject, verb, object, or prepositional phrase, return a separate sentence with each element masked in turn.
 
-    1. **Identify and mask the following elements:**
-    - **Subject masking:** Mask the subject (and any adjectives or adjective phrases that describe the subject) with [MASK].
-    - **Verb masking:** Mask the verb with [MASK].
-    - **Object masking:** Mask the object (and any adjectives or adjective phrases that describe the object) with [MASK].
-    - **Prepositional phrase masking:** Mask the entire prepositional phrase (e.g., "near the tree") with [MASK].
+    # 1. **Identify and mask the following elements:**
+    # - **Subject masking:** Mask the subject (and any adjectives or adjective phrases that describe the subject) with [MASK].
+    # - **Verb masking:** Mask the verb with [MASK].
+    # - **Object masking:** Mask the object (and any adjectives or adjective phrases that describe the object) with [MASK].
+    # - **Prepositional phrase masking:** Mask the entire prepositional phrase (e.g., "near the tree") with [MASK].
 
-    2. **Handling multiple instances:**
-    - If there is more than one subject, verb, object, or prepositional phrase in a sentence, return multiple sentences, each with only one element masked.
+    # 2. **Handling multiple instances:**
+    # - If there is more than one subject, verb, object, or prepositional phrase in a sentence, return multiple sentences, each with only one element masked.
 
-    3. **Output format:** 
-    - Ensure the output is valid JSON.
-    - Do not include any extra formatting like code blocks or tags.
-    - Do not include any extra characters like ```json or similar markers.
+    # 3. **Output format:** 
+    # - Ensure the output is valid JSON.
+    # - Do not include any extra formatting like code blocks or tags.
+    # - Do not include any extra characters like ```json or similar markers.
 
-    Output Format:
+    # Output Format:
+    # {
+    #     "subject_masked": ["Sentence with one subject masked."],
+    #     "verb_masked": ["Sentence with one verb masked."],
+    #     "object_masked": ["Sentence with one object masked."],
+    #     "prepositional_phrase_masked": ["Sentence with one prepositional phrase masked."]
+    # }
+
+    # **Example 1:**
+    # User input: "The tall man is throwing a ball to the child near the tree."
+
+    # Output:
+    # {
+    #     "subject_masked": [ "[MASK] is throwing a ball to the child near the tree." ],
+    #     "verb_masked": [ "The tall man is [MASK] a ball to the child near the tree." ],
+    #     "object_masked": [ "The tall man is throwing [MASK] to the child near the tree." ],
+    #     "prepositional_phrase_masked": [ "The tall man is throwing a ball to the child [MASK]." ]
+    # }
+
+    # **Example 2:**
+    # User input: "John and Mary are riding their bikes through the park."
+
+    # Output:
+    # {
+    #     "subject_masked": [ "[MASK] and Mary are riding their bikes through the park.", "John and [MASK] are riding their bikes through the park." ],
+    #     "verb_masked": [ "John and Mary are [MASK] their bikes through the park." ],
+    #     "object_masked": [ "John and Mary are riding [MASK] through the park." ],
+    #     "prepositional_phrase_masked": [ "John and Mary are riding their bikes [MASK]." ]
+    # }
+
+    # **Example 3:**
+    # User input: "A cat is sitting on the table under the lamp."
+
+    # Output:
+    # {
+    #     "subject_masked": [ "[MASK] is sitting on the table under the lamp." ],
+    #     "verb_masked": [ "A cat is [MASK] on the table under the lamp." ],
+    #     "object_masked": [ "A cat is sitting on [MASK] under the lamp." ],
+    #     "prepositional_phrase_masked": [ "A cat is sitting [MASK] under the lamp.", "A cat is sitting on the table [MASK]." ]
+    # }
+
+    # **Example 4:**
+    # User input: "The man picked up the phone and called his friend."
+
+    # Output:
+    # {
+    #     "subject_masked": [ "[MASK] picked up the phone and called his friend." ],
+    #     "verb_masked": [ "The man [MASK] the phone and called his friend.", "The man picked up the phone and [MASK] his friend." ],
+    #     "object_masked": [ "The man picked up [MASK] and called his friend.", "The man picked up the phone and called [MASK]." ],
+    #     "prepositional_phrase_masked": []
+    # }
+
+    # **Example 5:**
+    # User input: "She baked a cake and decorated it with icing."
+
+    # Output:
+    # {
+    #     "subject_masked": [ "[MASK] baked a cake and decorated it with icing." ],
+    #     "verb_masked": [ "She [MASK] a cake and decorated it with icing.", "She baked a cake and [MASK] it with icing." ],
+    #     "object_masked": [ "She baked [MASK] and decorated it with icing.", "She baked a cake and decorated [MASK] with icing." ],
+    #     "prepositional_phrase_masked": [ "She baked a cake and decorated it [MASK]." ]
+    # }
+    # """
+
+    v3 = """The user will input a text query which describing human activities in a video. You need to provides multiple textual descriptions for each text query as comprehensively as possible.
+
+    You should only respond in JSON format as described below:
+
+    INSTRUCTIONS OF OUTPUTS:
+
+    Your outputs should contain "query_json": "<query_json>". The query json should be structured as follows:
+    - Translate user descriptions into JSON-compatible format.
+    - Re-write the original query. You can diversify the sentence structure and word usage, but you should strictly keep the same semantic meaning. Do not add uncertain details that do not associate with the target video. The rewriting should strictly follow the factual information in the original query",
+    - "sub_query_id" = 0 represents the re-writted original query.
+    Example:
+
+    User Input: "a person is sitting in front of a computer sneezing."
+
+    query_json = [
     {
-        "subject_masked": ["Sentence with one subject masked."],
-        "verb_masked": ["Sentence with one verb masked."],
-        "object_masked": ["Sentence with one object masked."],
-        "prepositional_phrase_masked": ["Sentence with one prepositional phrase masked."]
+        "sub_query_id": 0,
+        "descriptions": ["An individual is seated at a desk, sneezing while using a computer.", "Someone is in front of a computer, sneezing as they sit.", "A person sneezes while sitting in front of their computer."]
+    },
+    ]
+
+    This output must be compatible with Python's json.loads() function.
+
+    RESPONSE TEMPLATE:
+    {
+        "query_json": "<query_json>"
     }
 
-    **Example 1:**
-    User input: "The tall man is throwing a ball to the child near the tree."
-
-    Output:
-    {
-        "subject_masked": [ "[MASK] is throwing a ball to the child near the tree." ],
-        "verb_masked": [ "The tall man is [MASK] a ball to the child near the tree." ],
-        "object_masked": [ "The tall man is throwing [MASK] to the child near the tree." ],
-        "prepositional_phrase_masked": [ "The tall man is throwing a ball to the child [MASK]." ]
-    }
-
-    **Example 2:**
-    User input: "John and Mary are riding their bikes through the park."
-
-    Output:
-    {
-        "subject_masked": [ "[MASK] and Mary are riding their bikes through the park.", "John and [MASK] are riding their bikes through the park." ],
-        "verb_masked": [ "John and Mary are [MASK] their bikes through the park." ],
-        "object_masked": [ "John and Mary are riding [MASK] through the park." ],
-        "prepositional_phrase_masked": [ "John and Mary are riding their bikes [MASK]." ]
-    }
-
-    **Example 3:**
-    User input: "A cat is sitting on the table under the lamp."
-
-    Output:
-    {
-        "subject_masked": [ "[MASK] is sitting on the table under the lamp." ],
-        "verb_masked": [ "A cat is [MASK] on the table under the lamp." ],
-        "object_masked": [ "A cat is sitting on [MASK] under the lamp." ],
-        "prepositional_phrase_masked": [ "A cat is sitting [MASK] under the lamp.", "A cat is sitting on the table [MASK]." ]
-    }
-
-    **Example 4:**
-    User input: "The man picked up the phone and called his friend."
-
-    Output:
-    {
-        "subject_masked": [ "[MASK] picked up the phone and called his friend." ],
-        "verb_masked": [ "The man [MASK] the phone and called his friend.", "The man picked up the phone and [MASK] his friend." ],
-        "object_masked": [ "The man picked up [MASK] and called his friend.", "The man picked up the phone and called [MASK]." ],
-        "prepositional_phrase_masked": []
-    }
-
-    **Example 5:**
-    User input: "She baked a cake and decorated it with icing."
-
-    Output:
-    {
-        "subject_masked": [ "[MASK] baked a cake and decorated it with icing." ],
-        "verb_masked": [ "She [MASK] a cake and decorated it with icing.", "She baked a cake and [MASK] it with icing." ],
-        "object_masked": [ "She baked [MASK] and decorated it with icing.", "She baked a cake and decorated [MASK] with icing." ],
-        "prepositional_phrase_masked": [ "She baked a cake and decorated it [MASK]." ]
-    }
+    Again, your response should be in JSON format and can be parsed by Python json.loads(). Please provide the output in JSON format directly, without any additional context. Do not use Markdown syntax, and do not enclose the returned JSON in ```. Rewrite the original query when "sub_query_id" = 0.
     """
-    masking(client, prompt_masking_task, './dataset/activitynet/llm_outputs-revise_and_replace.json', './dataset/activitynet/llm_outputs-masked.json')
+    example(client, v3, './dataset/activitynet/llm_outputs-revise_and_replace.json')

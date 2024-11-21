@@ -81,7 +81,7 @@ DATASETS={
         }
     },
     'qvhighlight': {
-        'feature_path': '/home/zhengmh/Datasets/qvhighlight/blip2_coco_features/',
+        'feature_path': './datasets/QVHighlights_features/',
         'stride': 50,
         'max_stride_factor': 0.5,
         'splits': {

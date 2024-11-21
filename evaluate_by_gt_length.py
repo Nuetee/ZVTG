@@ -25,15 +25,21 @@ def calc_iou(candidates, gt):
     union = np.maximum(end, e) - np.minimum(start, s)
     return inter.clip(min=0) / union
 
-def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
+def eval_with_llm(data, dataset_name, feature_path, stride, max_stride_factor, pad_sec=0.0):
     ious = []
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
     
-    # 10% 단위로 구간을 나누어 구간별 IoU와 recall을 기록할 리스트 초기화
-    interval_ious = {f"{i*10}-{(i+1)*10}%": [] for i in range(10)}
-    interval_recalls = {f"{i*10}-{(i+1)*10}%": np.array([0, 0, 0]) for i in range(10)}
-    interval_counts = {f"{i*10}-{(i+1)*10}%": 0 for i in range(10)}  # 각 구간의 개수를 기록
+    if dataset_name == "charades":
+        interval = [5,10,15,20]
+        interval_ious = {'<5s': [], '<10s': [], '<15s': [], '<20s': []}
+        interval_recalls = {'<5s': np.array([0, 0, 0]), '<10s': np.array([0, 0, 0]), '<15s': np.array([0, 0, 0]), '<20s': np.array([0, 0, 0])}
+        interval_counts = {'<5s': 0, '<10s': 0, '<15s': 0, '<20s': 0}  # 각 구간의 개수를 기록
+    elif dataset_name == 'activitynet':
+        interval = [30,60,90,120]
+        interval_ious = {'<30s': [], '<60s': [], '<90s': [], '<120s': []}
+        interval_recalls = {'<30s': np.array([0, 0, 0]), '<60s': np.array([0, 0, 0]), '<90s': np.array([0, 0, 0]), '<120s': np.array([0, 0, 0])}
+        interval_counts = {'<30s': 0, '<60s': 0, '<90s': 0, '<120s': 0}  # 각 구간의 개수를 기록
     
     pbar = tqdm(data.items())
     for vid, ann in pbar:
@@ -72,12 +78,27 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
             recall += thresh <= iou_
 
             # gt의 상대적 길이에 따른 비율 계산 및 구간별 IoU와 recall 기록
-            relative_length = (gt[1] - gt[0]) / duration
-            interval_index = min(int(relative_length * 10), 9)  # 0~9까지 인덱스
-            interval_key = f"{interval_index*10}-{(interval_index+1)*10}%"
-            interval_ious[interval_key].append(max(iou_, 0))
-            interval_recalls[interval_key] += thresh <= iou_
-            interval_counts[interval_key] += 1
+            gt_length = gt[1] - gt[0] 
+            if gt_length < interval[0]:
+                interval_key = '<' + str(interval[0]) + 's'
+                interval_ious[interval_key].append(max(iou_, 0))
+                interval_recalls[interval_key] += thresh <= iou_
+                interval_counts[interval_key] += 1
+            if gt_length < interval[1]:
+                interval_key = '<' + str(interval[1]) + 's'
+                interval_ious[interval_key].append(max(iou_, 0))
+                interval_recalls[interval_key] += thresh <= iou_
+                interval_counts[interval_key] += 1
+            if gt_length < interval[2]:
+                interval_key = '<' + str(interval[2]) + 's'
+                interval_ious[interval_key].append(max(iou_, 0))
+                interval_recalls[interval_key] += thresh <= iou_
+                interval_counts[interval_key] += 1
+            if gt_length < interval[3]:
+                interval_key = '<' + str(interval[3]) + 's'
+                interval_ious[interval_key].append(max(iou_, 0))
+                interval_recalls[interval_key] += thresh <= iou_
+                interval_counts[interval_key] += 1
 
         pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
 
@@ -173,7 +194,7 @@ if __name__=='__main__':
         if args.llm_output and os.path.exists(args.llm_output):
             with open(args.llm_output) as f:
                 data = json.load(f)
-            eval_with_llm(data, dataset['feature_path'], dataset['stride'], dataset['max_stride_factor'], dataset['splits'][args.split]['pad_sec'])
+            eval_with_llm(data, args.dataset, dataset['feature_path'], dataset['stride'], dataset['max_stride_factor'], dataset['splits'][args.split]['pad_sec'])
         else:
             with open(dataset['splits'][args.split]['annotation_file']) as f:
                 data = json.load(f)
