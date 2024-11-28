@@ -1,4 +1,5 @@
 import os
+import clip
 from tqdm import tqdm
 import torch
 import numpy as np
@@ -14,6 +15,11 @@ model, vis_processors, text_processors = load_model_and_preprocess("blip2_image_
 vis_processors = transforms.Compose([
     t for t in vis_processors['eval'].transform.transforms if not isinstance(t, transforms.ToTensor)
 ])
+
+clip_model, preprocess = clip.load("ViT-L/14", device='cuda')
+
+# Extract the text encoder
+clip_text_encoder = clip_model.encode_text
 
 
 def nms(moments, scores, pre_mom, pre_score, thresh):
@@ -156,20 +162,20 @@ def plot_scores(scores, normalized_scores, timestamps, prop1, prop2, filename="s
 
     # timestamps 구간을 회색으로 칠하기
     start, end = timestamps 
-    plt.axvline(start, color='gray', linestyle="--")
-    plt.axvline(end, color='gray', linestyle="--")
+    plt.axvline(start, color='gray', linestyle="-", linewidth=6)
+    plt.axvline(end, color='gray', linestyle="-", linewidth=6)
 
     # prop2 시작과 끝에 세로선 추가
     start_2, end_2, _ = list(prop2)
     # plt.axvspan(start_2, end_2, color='C1', alpha=0.3, label="Ours w/o AA prediction")
-    plt.axvline(start_2, color='C8', linestyle="--", label="Ours w/o AA prediction", linewidth=3, alpha=1)
-    plt.axvline(end_2, color='C8', linestyle="--")
+    plt.axvline(start_2, color='C8', linestyle="--", label="Ours w/o AA prediction", linewidth=4)
+    plt.axvline(end_2, color='C8', linestyle="--", linewidth=4)
 
     # prop1 시작과 끝에 세로선 추가
     start_1, end_1, _ = list(prop1)
     # plt.axvspan(start_1, end_1, color='C8', alpha=0.3, label="Ours prediction")
-    plt.axvline(start_1, color='C3', linestyle="--", label="Ours prediction", linewidth=2.5, alpha=1)
-    plt.axvline(end_1, color='C3', linestyle="--")
+    plt.axvline(start_1, color='C3', linestyle="-.", label="Ours prediction", linewidth=2, alpha=1)
+    plt.axvline(end_1, color='C3', linestyle="-.", linewidth=2)
     plt.axvspan(0, 0, color='gray', alpha=0.3, label="Ground truth")  # 회색 구간 추가
 
     # 범례 표시
@@ -180,25 +186,33 @@ def plot_scores(scores, normalized_scores, timestamps, prop1, prop2, filename="s
     plt.savefig(filename)
     plt.close()  # 메모리 절약을 위해 그래프 닫기
 
-
-
-def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=1):
+def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=1, temporal_window_size=21, is_clip=False):
     num_frames = video_features.shape[0]
-    # gt = torch.round(torch.tensor(gt) / torch.tensor(duration) * num_frames).to(torch.int)
-    with torch.no_grad():
-        # print(sentences)
-        text = model.tokenizer(sentences, padding='max_length', truncation=True, max_length=35, return_tensors="pt").to(
-            'cuda')
-        text_output = model.Qformer.bert(text.input_ids, attention_mask=text.attention_mask, return_dict=True)
-        text_feat = model.text_proj(text_output.last_hidden_state[:, 0, :])
-    v1 = F.normalize(text_feat, dim=-1)
-    v2 = F.normalize(torch.tensor(video_features, device='cuda', dtype=v1.dtype), dim=-1)
-    scores = torch.einsum('md,npd->mnp', v1, v2)
-    scores, scores_idx = scores.max(dim=-1)
-    scores = scores.mean(dim=0, keepdim=True)
-
+    gt = torch.round(torch.tensor(gt) / torch.tensor(duration) * num_frames).to(torch.int)
+    # import pdb;pdb.set_trace()
+    if is_clip:
+        with torch.no_grad():
+           text_tokens = clip.tokenize(sentences).to(device='cuda')
+           text_feat = clip_text_encoder(text_tokens)
+        v1 = F.normalize(text_feat, p=2, dim=1)  # Normalize along feature dimension
+        v2 = F.normalize(torch.tensor(video_features, device='cuda', dtype=v1.dtype), p=2, dim=1)  # Normalize along feature dimension
+        scores = torch.matmul(v2, v1.T).squeeze()
+        scores = scores.unsqueeze(0)
+    else:
+        with torch.no_grad():
+            # print(sentences)
+            text = model.tokenizer(sentences, padding='max_length', truncation=True, max_length=35, return_tensors="pt").to(
+                'cuda')
+            text_output = model.Qformer.bert(text.input_ids, attention_mask=text.attention_mask, return_dict=True)
+            text_feat = model.text_proj(text_output.last_hidden_state[:, 0, :])
+        v1 = F.normalize(text_feat, dim=-1)
+        v2 = F.normalize(torch.tensor(video_features, device='cuda', dtype=v1.dtype), dim=-1)
+        scores = torch.einsum('md,npd->mnp', v1, v2)
+        scores, scores_idx = scores.max(dim=-1)
+        scores = scores.mean(dim=0, keepdim=True)
+    # pdb.set_trace()
     # scores > 0.2인 마스킹 생성 (Boolean 형태 유지)
-    initial_mask = (scores > 0.2)  # 0.2 이하 값은 False, 나머지는 True
+    initial_mask = (scores > 0 if is_clip else scores > 0.2)  # 0.2 이하 값은 False, 나머지는 True
 
     # scores의 길이가 3 미만인 경우 예외 처리
     if scores.shape[1] < 3:
@@ -270,7 +284,7 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
     normalized_scores = torch.tensor(transformed_data, device=device).unsqueeze(0)
 
     cum_scores = torch.cumsum(normalized_scores, dim=1)[0]
-    cum_scores_2 = torch.cumsum(scores, dim=1)[0]
+    cum_scores_2 = torch.cumsum(scores[:, masks], dim=1)[0]
     #### Similarity score noramlization ####
     
     #### save sim score ####
@@ -278,16 +292,19 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
     # gt_frame = [int(round(x / duration * num_frames)) for x in gt]
     # plot_scores(scores, normalized_scores, gt_frame, filename=f"./sim_score/{revise_sentences}.png")
     #### save sim score ####
-
-    scores_idx = scores_idx.reshape(-1)
+    # pdb.set_trace()
     video_features = torch.tensor(video_features).cuda()
-    selected_video_features = video_features[torch.arange(num_frames), scores_idx]
+    if is_clip:
+        selected_video_features = video_features
+    else:
+        scores_idx = scores_idx.reshape(-1)
+        selected_video_features = video_features[torch.arange(num_frames), scores_idx]
     time_features = (torch.arange(num_frames) / num_frames).unsqueeze(1).cuda()
     selected_video_time_features = torch.cat((selected_video_features, time_features), dim=1)
     selected_video_time_features = selected_video_time_features[masks]
 
     #### 비디오 프레임 벡터 스무딩 (글로벌)
-    smooth_kernel_size = 21
+    smooth_kernel_size = temporal_window_size
     smooth_padding = smooth_kernel_size // 2
     padding_selected_video_time_features_global = torch.cat((selected_video_time_features[0].repeat(smooth_padding, 1), selected_video_time_features, selected_video_time_features[-1].repeat(smooth_padding, 1)), dim=0)
     kernel = torch.ones(padding_selected_video_time_features_global.shape[1], 1, smooth_kernel_size).cuda() / smooth_kernel_size
@@ -299,9 +316,10 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
     selected_video_time_features_global = smoothed_selected_video_time_features_global[0]
     #### 비디오 프레임 벡터 스무딩 (글로벌)
 
+
     #### K-means 클러스터링 적용 (글로벌)
     if len(masked_indices) < kmeans_k:
-        kmeans_k = 2
+        kmeans_k = min(len(masked_indices), 2)
     kmeans = KMeans(n_clusters=kmeans_k, n_init=10, random_state=42)
     kmeans_labels_global = kmeans.fit_predict(np.array(selected_video_time_features_global.cpu()))
     kmeans_labels_global = torch.tensor(kmeans_labels_global)
@@ -309,50 +327,40 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
 
     #### (글로벌) 클러스터링 결과에 따라 묶음 만들기
     global_proposals = []
-    global_proposals_scores = []
-    global_proposals_scores_2 = []
     start_idx = 0
-    # start_idx = masked_indices[0].item()  # 마스킹된 첫 번째 인덱스
+    
     current_val = kmeans_labels_global[0]
     for i in range(1, len(kmeans_labels_global)):
         if kmeans_labels_global[i] != current_val:
             global_proposals.append([start_idx, i])  ### start_idx 이상, i 미만 까지 같은 레이블
-            score = extract_static_score(start_idx, i, cum_scores, len(cum_scores), normalized_scores).item()
-            score_2 = extract_static_score(start_idx, i, cum_scores_2, len(cum_scores_2), scores).item()
-            global_proposals_scores.append(round(score, 4))
-            global_proposals_scores_2.append(round(score_2, 4))
+            
             start_idx = i
             current_val = kmeans_labels_global[i]
     
     global_proposals.append([start_idx, len(kmeans_labels_global)])
-    score = extract_static_score(start_idx, len(kmeans_labels_global), cum_scores, len(cum_scores), normalized_scores).item()
-    score_2 = extract_static_score(start_idx, len(kmeans_labels_global), cum_scores_2, len(cum_scores_2), scores).item()
-    global_proposals_scores.append(round(score, 4))
-    global_proposals_scores_2.append(round(score_2, 4))
     global_proposals.append([len(kmeans_labels_global), len(kmeans_labels_global)])
     #### (글로벌) 클러스터링 결과에 따라 묶음 만들기
 
     ### (글로벌) Extracting Global Proposals (Cartesian product)
     final_proposals = []
-    final_proposals_2 = []
     final_proposals_scores_static = []
+    
+    final_proposals_2 = []
     final_proposals_scores_static_2 = []
-    final_proposals_scores_avg = []
+    
     for i in range(len(global_proposals)):
         for j in range(i + 1, len(global_proposals)):
             start = global_proposals[i][0]
             last = global_proposals[j][0]
             if (last - start) > num_frames * prior:
                 continue
-            score_static = extract_static_score(start, last, cum_scores, len(cum_scores), normalized_scores).item()
-            score_static_2 = extract_static_score(start, last, cum_scores_2, len(cum_scores_2), scores).item()
-            score_avg = extract_avg_score(start, last, cum_scores, len(cum_scores), scores).item()
+            score_static = extract_static_score(start, last, cum_scores, len(cum_scores), scores).item()
+            score_static_2 = extract_static_score(start, last, cum_scores_2, len(cum_scores_2), scores[:, masks]).item()
             
             final_proposals.append([start, last])
             final_proposals_2.append([start, last])
             final_proposals_scores_static.append(round(score_static, 4))
             final_proposals_scores_static_2.append(round(score_static_2, 4))
-            final_proposals_scores_avg.append(round(score_avg, 4))
 
     final_proposals = [
         [
@@ -368,25 +376,28 @@ def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=
         ]
         for start, last in final_proposals_2
     ]
+
     final_proposals = torch.tensor(final_proposals)
-    final_proposals_2 = torch.tensor(final_proposals_2)
     final_proposals_scores_static = torch.tensor(final_proposals_scores_static)
-    final_proposals_scores_static_2 = torch.tensor(final_proposals_scores_static_2)
 
     value_static, index_static = final_proposals_scores_static.sort(descending=True)
-    value_static, index_static_2 = final_proposals_scores_static_2.sort(descending=True)
     final_proposals_static = final_proposals[index_static]
     final_proposals_scores_static = final_proposals_scores_static[index_static]
+
+    final_proposals_2 = torch.tensor(final_proposals_2)
+    final_proposals_scores_static_2 = torch.tensor(final_proposals_scores_static_2)
+
+    value_static, index_static_2 = final_proposals_scores_static_2.sort(descending=True)
     final_proposals_static_2 = final_proposals_2[index_static_2]
     final_proposals_scores_static_2 = final_proposals_scores_static_2[index_static_2]
 
-    final_proposals_scores_avg = torch.tensor(final_proposals_scores_avg)
-    value_avg, index_avg = final_proposals_scores_avg.sort(descending=True)
-    final_proposals_avg = final_proposals[index_avg]
-    final_proposals_scores_avg = final_proposals_scores_avg[index_avg]
     ### (글로벌) Extracting Global Proposals (Cartesian product)
 
-    return scores, normalized_scores, final_proposals_static, final_proposals_scores_static, final_proposals_static_2, final_proposals_scores_static_2
+    normalized_scores_full = torch.zeros_like(scores, device=device)  # scores와 동일한 크기
+    normalized_scores_full[:, masks] = normalized_scores  # 마스킹된 위치에 정규화된 점수 삽입
+    normalized_scores_full[:, ~masks] = 0  # 마스킹되지 않은 위치는 0으로 설정
+
+    return scores, normalized_scores_full, final_proposals_static, final_proposals_scores_static, final_proposals_static_2, final_proposals_scores_static_2
 
 def extract_static_score(start, end, cum_scores, num_frames, scores):
     kernel_size = end - start
@@ -415,10 +426,10 @@ def extract_avg_score(start, end, cum_scores, num_frames, scores):
     return avg_score
 
 
-def generate_proposal(video_features, sentences, gt, duration, stride, max_stride, gamma, kmeans_k, prior, nms_thresh=0.3):
+def generate_proposal(video_features, sentences, gt, duration, stride, max_stride, gamma, kmeans_k, prior, temporal_window_size, is_clip):
     num_frames = video_features.shape[0]
     ground_truth = [round(gt[0] / duration * num_frames, 0), round(gt[1] / duration * num_frames, 0)]
-    scores, normalized_scores, final_proposals, final_proposals_scores, final_proposals_2, final_proposals_scores_2 = calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior)
+    scores, normalized_scores, final_proposals, final_proposals_scores, final_proposals_2, final_proposals_scores_2 = calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior, temporal_window_size, is_clip)
     cum_scores = torch.cumsum(scores, dim=1)[0]
 
     masks = (scores > 0.2).float()
@@ -449,23 +460,28 @@ def generate_proposal(video_features, sentences, gt, duration, stride, max_strid
     #### dynamic scoring #####
 
     final_proposals = final_proposals.clone()
-    final_proposals_2 = final_proposals_2.clone()
     final_scores = final_proposals_scores.clone()
-    final_scores_2 = final_proposals_scores_2.clone()
     final_prefix = final_proposals[:, 0].clone().detach()
-    final_prefix_2 = final_proposals_2[:, 0].clone().detach()
     final_scores, sort_idx = final_scores.sort(descending=True)
     final_proposals = final_proposals[sort_idx]
     final_prefix = final_prefix[sort_idx]
+
+    final_proposals_2 = final_proposals_2.clone()
+    final_scores_2 = final_proposals_scores_2.clone()
+    final_prefix_2 = final_proposals_2[:, 0].clone().detach()
+    final_scores_2, sort_idx_2 = final_scores_2.sort(descending=True)
+    final_proposals_2 = final_proposals_2[sort_idx_2]
+    final_prefix_2 = final_prefix_2[sort_idx_2]
+
     return [final_proposals], [final_scores], [final_proposals_2], [final_scores_2], [final_prefix], [final_prefix_2], scores, normalized_scores, cum_scores, num_frames
 
 
-def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num, kmeans_k, prior, use_llm_cand_num=3, use_llm=False):
+def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num, kmeans_k, prior, temporal_window_size, use_llm=False, is_clip=False):
     answer = []
     for query in query_json:
         # import pdb; pdb.set_trace()
         gt = query['gt']
-        proposals, scores, proposals_2, scores_2, pre_proposals, pre_proposals_2, ori_scores, normalized_scores, ori_cum_scores, num_frames = generate_proposal(video_feature, query['descriptions'], gt, duration, stride, max_stride, gamma, kmeans_k, prior)
+        proposals, scores, proposals_2, scores_2, pre_proposals, pre_proposals_2, ori_scores, normalized_scores, ori_cum_scores, num_frames = generate_proposal(video_feature, query['descriptions'], gt, duration, stride, max_stride, gamma, kmeans_k, prior, temporal_window_size, is_clip)
         if len(proposals[0]) == 0:
             static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
             dynamic_pred = np.array([0.0, 0.0, 0.0])
@@ -473,11 +489,9 @@ def localize(video_feature, duration, query_json, stride, max_stride, gamma, can
         else:
             static_pred = proposals[0][:cand_num]
             dynamic_pred = pre_proposals[0][:cand_num]
-            # scores = gmm_scores[:10]
-            # scores = scores / scores.max()
             scores = scores[0][:cand_num]
             scores = scores / scores.max()
-        
+
         if len(proposals_2[0]) == 0:
             static_pred_2 = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
             dynamic_pred_2 = np.array([0.0, 0.0, 0.0])
@@ -485,15 +499,8 @@ def localize(video_feature, duration, query_json, stride, max_stride, gamma, can
         else:
             static_pred_2 = proposals_2[0][:cand_num]
             dynamic_pred_2 = pre_proposals_2[0][:cand_num]
-            # scores = gmm_scores[:10]
-            # scores = scores / scores.max()
             scores_2 = scores_2[0][:cand_num]
             scores_2 = scores_2 / scores_2.max()
-
-            # if scores.min() < 0:
-            #     scores = scores + (-scores.min() + 1e-4)
-            # scores = scores / scores.max()
-            # scores = scores + (1- scores.max()) #### 공사중
 
         query['response'] = []
         for i in range(len(static_pred)):
@@ -515,34 +522,32 @@ def localize(video_feature, duration, query_json, stride, max_stride, gamma, can
 
     proposals = []
     for t in range(cand_num): ##################### 건들여봐야해!!! 성준아
-        proposals += [[p['response'][t]['static_start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answer if len(p['response']) > t]  ### only static
-
+        proposals += [[p['response'][t]['static_start'], p['response'][t]['end'], p['response'][t]['confidence']] for p
+                      in answer if len(p['response']) > t]  ### only static
     proposals_2 = []
     for t in range(cand_num): ##################### 건들여봐야해!!! 성준아
         proposals_2 += [[p['response_2'][t]['static_start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answer if len(p['response']) > t]  ### only static
 
-    
+    post_proposals = proposals
+    post_proposals = select_proposal(np.array(post_proposals))
+
+    post_proposals_2 = proposals_2
+    post_proposals_2 = select_proposal(np.array(post_proposals_2))
+
+    # if not np.array_equal(post_proposals[:1, :2], post_proposals_2[:1, :2]):
+    #     revise_sentences = sanitize_filename(query['descriptions'])
+    #     short_sentence = revise_sentences[:100]
+    #     gt_frame = [int(round(x / duration * num_frames)) for x in gt]
+    #     plot_scores(ori_scores, normalized_scores, gt_frame, post_proposals[:1][0], post_proposals_2[:1][0],  filename=f"./sim_score_activitynet_2/{short_sentence}.png")
+
+    proposals = np.array(proposals)
+    proposals[:,:2] = proposals[:,:2] / num_frames * duration
+    import pdb;pdb.set_trace()
     if use_llm:
-        return list(proposals[:use_llm_cand_num])
+        return list(proposals[:cand_num])
     
     post_proposals = proposals
     np.set_printoptions(precision=4, suppress=True)
     post_proposals = select_proposal(np.array(post_proposals))
-
-    post_proposals_2 = proposals_2
-    np.set_printoptions(precision=4, suppress=True)
-    post_proposals_2 = select_proposal(np.array(post_proposals_2))
-
-    if not np.array_equal(post_proposals[:1, :2], post_proposals_2[:1, :2]):
-        revise_sentences = sanitize_filename(query['descriptions'])
-        gt_frame = [int(round(x / duration * num_frames)) for x in gt]
-        plot_scores(ori_scores, normalized_scores, gt_frame, post_proposals[:1][0], post_proposals_2[:1][0],  filename=f"./sim_score/{revise_sentences}.png")
-    
-    proposals = np.array(proposals)
-    proposals[:,:2] = proposals[:,:2] / num_frames * duration
-
-    proposals_2 = np.array(proposals_2)
-    proposals_2[:,:2] = proposals_2[:,:2] / num_frames * duration
-
     return post_proposals
 

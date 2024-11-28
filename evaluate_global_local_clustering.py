@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import json
 from tqdm import tqdm
-from vlm_localizer_global_local_clustering_final import localize
+from vlm_localizer_global_local_clustering_final_plot import localize
 from qvhhighlight_eval import eval_submission
 import os
 from llm_prompting import select_proposal, filter_and_integrate
@@ -36,15 +36,22 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
     pbar = tqdm(data.items())
-
+    vid_list = ["v_dNgXkPmvU-c", "v_7SxEQiFHGm8", "v_yToUeIIlkOg", "v_ZcgahXg_ELw", "v_N5x5VUK7Kx8", "v_38ZxXyECPPU"]
+    ann_list = [" A man enters and sits on the ground in front of the camera and puts on his shoes and socks.", " A man spins a ball on his finger.", " He garnishes played and also crack some eggs into a container.", " The scuba divers wave as they finish their journey and swim back up to the surface of the ocean to get back into their boats.", " The two continue to work together and walk around the roof.", " A black screen appears with a website address in white letters.", " A man inside is cleaning a woman's nose."]
+    
     for vid, ann in pbar:
+        if vid not in vid_list:
+            continue
         duration = ann['duration']
         video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
         num_frames = video_feature.shape[0]
         for i in range(len(ann['sentences'])):
             # query
+            if ann['sentences'][i] not in ann_list:
+                continue
+            import pdb;pdb.set_trace()
             query_json = [{'descriptions': ann['sentences'][i], 'gt': ann['timestamps'][i], 'duration': ann['duration']}]
-            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.2, cand_num=12, kmeans_k=7, prior=0.5, temporal_window_size=21)
+            proposals = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), gamma=0.8, cand_num=17, kmeans_k=5, prior=1, temporal_window_size=25, use_llm=False, is_clip=False)
     
             gt = ann['timestamps'][i]
             iou_ = calc_iou(proposals[:1], gt)[0]
