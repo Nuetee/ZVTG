@@ -3,6 +3,17 @@ DATASETS={
         'feature_path': './datasets/Charades/',
         'stride': 20,
         'max_stride_factor': 0.5,
+        'hyper_parameters': {
+            'stride': 20,
+            'max_stride_factor': 0.5,
+            "gamma": 0.2,
+            "cand_num": 12,
+            "kmeans_k": 9,
+            "prior": 0.5,
+            "temporal_window_size": 21,
+            'is_clip': False,
+            'is_blip': False
+        },
         'splits': {
             'default': {
                 'annotation_file': 'dataset/charades-sta/charades_test.json',
@@ -34,6 +45,17 @@ DATASETS={
         'feature_path': './clip_feature/charades-sta/',
         'stride': 20,
         'max_stride_factor': 0.5,
+        'hyper_parameters': {
+            'stride': 20,
+            'max_stride_factor': 0.5,
+            "gamma": 0.2,
+            "cand_num": 12,
+            "kmeans_k": 9,
+            "prior": 0.5,
+            "temporal_window_size": 21,
+            'is_clip': True,
+            'is_blip': False
+        },
         'splits': {
             'default': {
                 'annotation_file': 'dataset/charades-sta/charades_test.json',
@@ -65,6 +87,17 @@ DATASETS={
         'feature_path': './datasets/Charades-BLIP/',
         'stride': 20,
         'max_stride_factor': 0.5,
+        'hyper_parameters': {
+            'stride': 20,
+            'max_stride_factor': 0.5,
+            "gamma": 0.2,
+            "cand_num": 12,
+            "kmeans_k": 9,
+            "prior": 0.5,
+            "temporal_window_size": 21,
+            'is_clip': False,
+            'is_blip': True
+        },
         'splits': {
             'default': {
                 'annotation_file': 'dataset/charades-sta/charades_test.json',
@@ -96,6 +129,17 @@ DATASETS={
         'feature_path': './datasets/Charades_internVideo/',
         'stride': 20,
         'max_stride_factor': 0.5,
+        'hyper_parameters': {
+            'stride': 20,
+            'max_stride_factor': 0.5,
+            "gamma": 0.2,
+            "cand_num": 12,
+            "kmeans_k": 9,
+            "prior": 0.5,
+            "temporal_window_size": 21,
+            'is_clip': False,
+            'is_blip': False
+        },
         'splits': {
             'default': {
                 'annotation_file': 'dataset/charades-sta/charades_test.json',
@@ -127,6 +171,17 @@ DATASETS={
         'feature_path': './datasets/ActivityNet/',
         'stride': 40,
         'max_stride_factor': 1,
+        'hyper_parameters': {
+            'stride': 40,
+            'max_stride_factor': 1,
+            "gamma": 0.8,
+            "cand_num": 17,
+            "kmeans_k": 5,
+            "prior": 1,
+            "temporal_window_size": 25,
+            'is_clip': False,
+            'is_blip': False
+        },
         'splits': {
             'default': {
                 'annotation_file': 'dataset/activitynet/test.json',

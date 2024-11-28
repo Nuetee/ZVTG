@@ -1,14 +1,12 @@
 import os
 import clip
-from tqdm import tqdm
 import torch
 import numpy as np
 from scipy.optimize import minimize_scalar
-from scipy.stats import boxcox
 import torch.nn.functional as F
 from lavis.models import load_model_and_preprocess
 from torchvision import transforms
-from llm_prompting import select_proposal
+from sklearn.cluster import KMeans
 
 model, vis_processors, text_processors = load_model_and_preprocess("blip2_image_text_matching", "coco", device='cuda',
                                                                    is_eval=True)
@@ -94,9 +92,6 @@ def get_dynamic_scores(scores, stride, masks, ths=0.0005, sigma=1):
     return dynamic_idxs, dynamic_scores
 
 
-from sklearn.cluster import KMeans
-
-
 def split_interval(init_timestep):
     init_timestep = init_timestep.cpu().sort()[0]
     # 결과를 저장할 리스트
@@ -127,6 +122,7 @@ def sanitize_filename(filename):
     filename = re.sub(r'[\/:*?"<>|]', '_', filename)
     return filename
 
+
 # calc_scores 함수 실행 후에 scores와 normalized_scores를 입력으로 사용합니다.
 import matplotlib.pyplot as plt
 def plot_scores(scores, normalized_scores, timestamps, filename="scores_plot.png"):
@@ -152,296 +148,47 @@ def plot_scores(scores, normalized_scores, timestamps, filename="scores_plot.png
     plt.savefig(filename)
     plt.close()  # 메모리 절약을 위해 그래프 닫기
 
-def calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior=1, temporal_window_size=21, is_clip=False, is_blip=False):
-    num_frames = video_features.shape[0]
-    gt = torch.round(torch.tensor(gt) / torch.tensor(duration) * num_frames).to(torch.int)
-    # import pdb;pdb.set_trace()
-    if is_clip:
-        with torch.no_grad():
-           text_tokens = clip.tokenize(sentences).to(device='cuda')
-           text_feat = clip_text_encoder(text_tokens)
-        v1 = F.normalize(text_feat, p=2, dim=1)  # Normalize along feature dimension
-        v2 = F.normalize(torch.tensor(video_features, device='cuda', dtype=v1.dtype), p=2, dim=1)  # Normalize along feature dimension
-        scores = torch.matmul(v2, v1.T).squeeze()
-        scores = scores.unsqueeze(0)
-    else:
-        with torch.no_grad():
-            # print(sentences)
-            text = model.tokenizer(sentences, padding='max_length', truncation=True, max_length=35, return_tensors="pt").to(
-                'cuda')
-            text_output = model.Qformer.bert(text.input_ids, attention_mask=text.attention_mask, return_dict=True)
-            text_feat = model.text_proj(text_output.last_hidden_state[:, 0, :])
-        v1 = F.normalize(text_feat, dim=-1)
-        v2 = F.normalize(torch.tensor(video_features, device='cuda', dtype=v1.dtype), dim=-1)
-        scores = torch.einsum('md,npd->mnp', v1, v2)
-        scores, scores_idx = scores.max(dim=-1)
-        scores = scores.mean(dim=0, keepdim=True)
-    # pdb.set_trace()
-    # scores > 0.2인 마스킹 생성 (Boolean 형태 유지)
-    initial_mask = (scores > 0 if is_clip or is_blip else scores > 0.2)  # 0.2 이하 값은 False, 나머지는 True
+def feature_tsne(features, sentence, gt, save_dir):
+    import matplotlib.pyplot as plt
+    from sklearn.manifold import TSNE
+    from adjustText import adjust_text
 
-    # scores의 길이가 3 미만인 경우 예외 처리
-    if scores.shape[1] < 3:
-        masks = initial_mask.squeeze()  # initial_mask를 그대로 사용
-    else:
-        # 양쪽 끝에 2씩 패딩 (모두 False로 설정)
-        padded_mask = F.pad(initial_mask, (1, 1), mode='constant', value=False)
+    # Normalize features
+    normalized_features = torch.nn.functional.normalize(features, p=2, dim=1)
+    normalized_features_np = normalized_features.detach().cpu().numpy()
+    n_samples = normalized_features_np.shape[0]
+    perplexity = min(30, n_samples - 1)
 
-        # 현재 위치를 기준으로 양옆 2개의 마스크 값 확인
-        final_mask = padded_mask.clone()  # 최종 마스크 결과 저장
-        for i in range(2, padded_mask.shape[1] - 1):
-            window = padded_mask[:, i - 1 : i + 2]
-            if window.sum() < 2:  # 과반 이상이 마스킹되지 않은 경우
-                final_mask[:, i] = 0
+    # Apply t-SNE
+    tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity)
+    tsne_features = tsne.fit_transform(normalized_features_np)
 
-        # 패딩 제거하여 원래 크기의 마스크로 복원
-        masks = final_mask[:, 1:-1].squeeze()
+    # Plot t-SNE with indices, using red color for points within the timestamp range
+    start = gt[0]
+    end = gt[1]
+    plt.figure(figsize=(12, 8))
+
+    # 범례에 사용할 빈 점 추가
+    plt.scatter([], [], c='red', label='Ground Truth Segment', s=35)
+    plt.scatter([], [], c='blue', label='Non-Ground Truth Segment', s=35)
+
+    # texts = []
+    for i, (x, y) in enumerate(tsne_features):
+        color = 'red' if start <= i <= end else 'blue'
+        plt.scatter(x, y, c=color, s=35)
+        # if start <= i <= end:
+        #     text = plt.text(x, y, str(i), fontsize=10, ha='center')  # Add text only for gt segment
+        #     texts.append(text)
+
+    # Adjust text to prevent overlap
+    # adjust_text(texts, only_move={'points': 'y', 'texts': 'y'}, autoalign='y', force_text=0.5)
+
+    plt.tick_params(axis='both', which='major', labelsize=14)
+    plt.legend(fontsize=18, loc="lower right")
     
-    # 모든 값이 False일 경우 전부 True로 설정
-    if not masks.any():
-        masks[:] = True
+    os.makedirs(save_dir, exist_ok=True)
+    plt.savefig(f"{save_dir}/tsne_features_{sentence}.png")
 
-    # final_mask를 기반으로 masked_indices 계산
-    masked_indices = torch.nonzero(masks, as_tuple=True)[0]  # 마스킹된 실제 인덱스 저장
-    
-    #### w/o sim score norm ####
-    # masked_scores = scores[:, masks]
-    # cum_scores = torch.cumsum(masked_scores, dim=1)[0]
-    #### w/o sim score norm ####
-    
-    #### Similarity score noramlization ####
-    device = scores.device
-    data = scores[:, masks].flatten().cpu().numpy()   # 마스크된 부분만 가져오기
-    # 작은 상수 추가로 양수 데이터 보장
-    epsilon = 1e-6
-    data = data + abs(data.min()) + epsilon if np.any(data <= 0) else data
-    
-    def boxcox_transformed(x, lmbda):
-        if lmbda == 0:
-            return np.log(x)
-        else:
-            return (x**lmbda - 1) / lmbda
-
-    # 최적의 lambda를 찾기 위한 로그 가능도 함수 (최소화할 함수)
-    def neg_log_likelihood(lmbda):
-        transformed_data = boxcox_transformed(data, lmbda)
-        # 분산 계산 시 overflow 방지
-        var = np.var(transformed_data, ddof=1)
-        return -np.sum(np.log(np.abs(transformed_data))) + 0.5 * len(data) * np.log(var)
-
-    # lambda 범위 내에서 최적화
-    result = minimize_scalar(neg_log_likelihood, bounds=(-2, 2), method='bounded')
-    best_lambda = result.x
-    
-    # 최적의 lambda로 변환 데이터 생성
-    transformed_data = boxcox_transformed(data, best_lambda)
-
-    original_min, original_max = data.min(), data.max()
-    transformed_min, transformed_max = transformed_data.min(), transformed_data.max()
-    transformed_data = (transformed_data - transformed_min) / (transformed_max - transformed_min)  # normalize to [0, 1]
-    is_scale = False
-    if original_max - original_min > gamma:
-        is_scale = True
-        transformed_data = transformed_data * (original_max - original_min) + original_min  # scale to original min/max
-    else:
-        transformed_data = transformed_data * (gamma) + original_min
-    # 변환 결과를 다시 텐서로 변환하고 원래 형태로 복원
-
-    normalized_scores = torch.tensor(transformed_data, device=device).unsqueeze(0)
-
-    cum_scores = torch.cumsum(normalized_scores, dim=1)[0]
-    #### Similarity score noramlization ####
-    
-    #### save sim score ####
-    # revise_sentences = sanitize_filename(sentences)
-    # gt_frame = [int(round(x / duration * num_frames)) for x in gt]
-    # plot_scores(scores, normalized_scores, gt_frame, filename=f"./sim_score/{revise_sentences}.png")
-    #### save sim score ####
-    # pdb.set_trace()
-    video_features = torch.tensor(video_features).cuda()
-    if is_clip:
-        selected_video_features = video_features
-    else:
-        scores_idx = scores_idx.reshape(-1)
-        selected_video_features = video_features[torch.arange(num_frames), scores_idx]
-    time_features = (torch.arange(num_frames) / num_frames).unsqueeze(1).cuda()
-    selected_video_time_features = torch.cat((selected_video_features, time_features), dim=1)
-    selected_video_time_features = selected_video_time_features[masks]
-    # pdb.set_trace()
-    ### feature t-SNE 저장
-    # region
-    # if sentences == ' men are walking outside a tent and doing balance on top of a rope.':
-    #     import matplotlib.pyplot as plt
-    #     from sklearn.manifold import TSNE
-    #     from adjustText import adjust_text
-        
-    #     # Normalize features
-    #     normalized_features = torch.nn.functional.normalize(selected_video_time_features, p=2, dim=1)
-    #     normalized_features_np = normalized_features.detach().cpu().numpy()
-    #     n_samples = normalized_features_np.shape[0]
-    #     perplexity = min(30, n_samples - 1)
-
-    #     # Apply t-SNE
-    #     tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity)
-    #     tsne_features = tsne.fit_transform(normalized_features_np)
-
-    #     # Plot t-SNE with indices, using red color for points within the timestamp range
-    #     start = gt[0]
-    #     end = gt[1]
-    #     plt.figure(figsize=(12, 8))
-
-    #     # 범례에 사용할 빈 점 추가
-    #     plt.scatter([], [], c='red', label='Ground Truth Segment', s=35)
-    #     plt.scatter([], [], c='blue', label='Non-Ground Truth Segment', s=35)
-
-    #     # texts = []
-    #     for i, (x, y) in enumerate(tsne_features):
-    #         color = 'red' if start <= i <= end else 'blue'
-    #         plt.scatter(x, y, c=color, s=35)
-    #         # if start <= i <= end:
-    #         #     text = plt.text(x, y, str(i), fontsize=10, ha='center')  # Add text only for gt segment
-    #         #     texts.append(text)
-
-    #     # Adjust text to prevent overlap
-    #     # adjust_text(texts, only_move={'points': 'y', 'texts': 'y'}, autoalign='y', force_text=0.5)
-
-    #     # plt.title("t-SNE of Single-Frame Features with Indices")
-    #     plt.tick_params(axis='both', which='major', labelsize=14)
-
-    #     plt.legend(fontsize=18, loc="lower right")
-    #     # os.makedirs('./tsne', exist_ok=True)
-    #     # plt.savefig(f"./tsne/tsne_features_{sentences}.png")
-    #     os.makedirs('./tsne_activitynet', exist_ok=True)
-    #     plt.savefig(f"./tsne_activitynet_test/tsne_features_{sentences}.png")
-    # endregion
-    ### feature t-SNE 저장
-
-    #### 비디오 프레임 벡터 스무딩 (글로벌)
-    smooth_kernel_size = temporal_window_size
-    smooth_padding = smooth_kernel_size // 2
-    padding_selected_video_time_features_global = torch.cat((selected_video_time_features[0].repeat(smooth_padding, 1), selected_video_time_features, selected_video_time_features[-1].repeat(smooth_padding, 1)), dim=0)
-    kernel = torch.ones(padding_selected_video_time_features_global.shape[1], 1, smooth_kernel_size).cuda() / smooth_kernel_size
-    padding_selected_video_time_features_global = padding_selected_video_time_features_global.unsqueeze(0).permute(0, 2, 1)  # (1, 257, 104)
-
-    padding_selected_video_time_features_global = padding_selected_video_time_features_global.float()
-    smoothed_selected_video_time_features_global = F.conv1d(padding_selected_video_time_features_global, kernel, padding=0, groups=padding_selected_video_time_features_global.shape[1])
-    smoothed_selected_video_time_features_global = smoothed_selected_video_time_features_global.permute(0, 2, 1)
-    selected_video_time_features_global = smoothed_selected_video_time_features_global[0]
-    #### 비디오 프레임 벡터 스무딩 (글로벌)
-
-    ### feature t-SNE 저장
-    # region
-    # if sentences == ' men are walking outside a tent and doing balance on top of a rope.':
-    #     import matplotlib.pyplot as plt
-    #     from sklearn.manifold import TSNE
-
-    #     # Normalize features
-    #     normalized_features = torch.nn.functional.normalize(selected_video_time_features_global, p=2, dim=1)
-    #     normalized_features_np = normalized_features.detach().cpu().numpy()
-    #     n_samples = normalized_features_np.shape[0]
-    #     perplexity = min(30, n_samples - 1)
-
-    #     # Apply t-SNE
-    #     tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity)
-    #     tsne_features = tsne.fit_transform(normalized_features_np)
-
-    #     # Plot t-SNE with indices, using red color for points within the timestamp range
-    #     start = gt[0]
-    #     end = gt[1]
-        
-    #     plt.figure(figsize=(12, 8))  # 가로 길이를 늘리기 위해 figsize 수정
-    #     # 범례에 사용할 빈 점 추가
-    #     plt.scatter([], [], c='red', label='Ground Truth Segment', s=35)
-    #     plt.scatter([], [], c='blue', label='Non-Ground Truth Segment', s=35)
-        
-    #     for i, (x, y) in enumerate(tsne_features):
-    #         color = 'red' if start <= i <= end else 'blue'
-    #         plt.scatter(x, y, c=color, s=35)
-    #         # if start <= i <= end:
-    #         #     text = plt.text(x, y, str(i), fontsize=10, ha='center')  # Add text only for gt segment
-    #         #     texts.append(text)
-
-    #     # Adjust text to prevent overlap
-    #     # adjust_text(texts, only_move={'points': 'y', 'texts': 'y'}, autoalign='y', force_text=0.5)
-
-    #     # plt.title("t-SNE of Global Features with Indices")
-    #     plt.tick_params(axis='both', which='major', labelsize=14)
-
-    #     plt.legend(fontsize=18, loc="lower right")
-    #     # os.makedirs('./tsne_global', exist_ok=True)
-    #     # plt.savefig(f"./tsne_global/tsne_global_features_{sentences}.png")
-    #     os.makedirs('./tsne_global_activitynet_test', exist_ok=True)
-    #     plt.savefig(f"./tsne_global_activitynet_test/tsne_global_features_{sentences}.png")
-    #     import pdb;pdb.set_trace()
-    # endregion
-    ### feature t-SNE 저장
-
-    #### K-means 클러스터링 적용 (글로벌)
-    if len(masked_indices) < kmeans_k:
-        kmeans_k = min(len(masked_indices), 2)
-    kmeans = KMeans(n_clusters=kmeans_k, n_init=10, random_state=42)
-    kmeans_labels_global = kmeans.fit_predict(np.array(selected_video_time_features_global.cpu()))
-    kmeans_labels_global = torch.tensor(kmeans_labels_global)
-    #### K-means 클러스터링 적용 (글로벌)
-
-    #### (글로벌) 클러스터링 결과에 따라 묶음 만들기
-    global_proposals = []
-    global_proposals_scores = []
-    start_idx = 0
-    # start_idx = masked_indices[0].item()  # 마스킹된 첫 번째 인덱스
-    current_val = kmeans_labels_global[0]
-    for i in range(1, len(kmeans_labels_global)):
-        if kmeans_labels_global[i] != current_val:
-            global_proposals.append([start_idx, i])  ### start_idx 이상, i 미만 까지 같은 레이블
-            score = extract_static_score(start_idx, i, cum_scores, len(cum_scores), scores).item()
-            global_proposals_scores.append(round(score, 4))
-            start_idx = i
-            current_val = kmeans_labels_global[i]
-    
-    global_proposals.append([start_idx, len(kmeans_labels_global)])
-    score = extract_static_score(start_idx, len(kmeans_labels_global), cum_scores, len(cum_scores), scores).item()
-    global_proposals_scores.append(round(score, 4))
-    global_proposals.append([len(kmeans_labels_global), len(kmeans_labels_global)])
-    #### (글로벌) 클러스터링 결과에 따라 묶음 만들기
-
-    ### (글로벌) Extracting Global Proposals (Cartesian product)
-    final_proposals = []
-    final_proposals_scores_static = []
-    final_proposals_scores_avg = []
-    for i in range(len(global_proposals)):
-        for j in range(i + 1, len(global_proposals)):
-            start = global_proposals[i][0]
-            last = global_proposals[j][0]
-            if (last - start) > num_frames * prior:
-                continue
-            score_static = extract_static_score(start, last, cum_scores, len(cum_scores), scores).item()
-            score_avg = extract_avg_score(start, last, cum_scores, len(cum_scores), scores).item()
-            
-            final_proposals.append([start, last])
-            final_proposals_scores_static.append(round(score_static, 4))
-            final_proposals_scores_avg.append(round(score_avg, 4))
-
-    final_proposals = [
-        [
-            masked_indices[start].item() if start < len(masked_indices) else num_frames,
-            masked_indices[last].item() if last < len(masked_indices) else num_frames
-        ]
-        for start, last in final_proposals
-    ]
-    final_proposals = torch.tensor(final_proposals)
-    final_proposals_scores_static = torch.tensor(final_proposals_scores_static)
-
-    value_static, index_static = final_proposals_scores_static.sort(descending=True)
-    final_proposals_static = final_proposals[index_static]
-    final_proposals_scores_static = final_proposals_scores_static[index_static]
-
-    final_proposals_scores_avg = torch.tensor(final_proposals_scores_avg)
-    value_avg, index_avg = final_proposals_scores_avg.sort(descending=True)
-    final_proposals_avg = final_proposals[index_avg]
-    final_proposals_scores_avg = final_proposals_scores_avg[index_avg]
-    ### (글로벌) Extracting Global Proposals (Cartesian product)
-
-    return scores, final_proposals_static, final_proposals_scores_static
 
 def extract_static_score(start, end, cum_scores, num_frames, scores):
     kernel_size = end - start
@@ -469,19 +216,203 @@ def extract_avg_score(start, end, cum_scores, num_frames, scores):
     avg_score = inner_sum / kernel_size
     return avg_score
 
+def scores_masking(scores, masks):
+    # scores의 길이가 3 미만인 경우 initial_mask를 그대로 사용
+    if scores.shape[1] < 3:
+        masks = masks.squeeze()
+    else:
+        # 양쪽 끝에 2씩 False로 패딩
+        padded_masks = F.pad(masks, (1, 1), mode='constant', value=False)
 
-def generate_proposal(video_features, sentences, gt, duration, stride, max_stride, gamma, kmeans_k, prior, temporal_window_size, is_clip, is_blip):
+        # 현재 위치를 기준으로 양옆 2개의 값 기반 Majority voting, 최종 마스크 결과 저장
+        final_masks = padded_masks.clone()
+        for i in range(2, padded_masks.shape[1] - 1):
+            window = padded_masks[:, i - 1 : i + 2]
+            if window.sum() < 2:
+                final_masks[:, i] = 0
+
+        # 패딩 제거하여 원래 크기의 마스크로 복원
+        final_masks = final_masks[:, 1:-1].squeeze()
+    
+    # 모든 값이 False일 경우 전부 True로 설정
+    if not final_masks.any():
+        final_masks[:] = True
+
+    # final_mask를 기반으로 masked_indices 계산
+    masked_indices = torch.nonzero(final_masks, as_tuple=True)[0]  # 마스킹된 실제 인덱스 저장
+    
+    return final_masks, masked_indices
+
+
+def alignment_adjustment(data, scale_gamma, device, lambda_max=2, lambda_min=-2):
+    # 작은 상수 추가로 양수 데이터 보장
+    epsilon = 1e-6
+    data = data + abs(data.min()) + epsilon if np.any(data <= 0) else data
+    
+    def boxcox_transformed(x, lmbda):
+        if lmbda == 0:
+            return np.log(x)
+        else:
+            return (x**lmbda - 1) / lmbda
+
+    # 최적의 lambda를 찾기 위한 로그 가능도 함수 (최소화할 함수)
+    def neg_log_likelihood(lmbda):
+        transformed_data = boxcox_transformed(data, lmbda)
+        # 분산 계산 시 overflow 방지
+        var = np.var(transformed_data, ddof=1)
+        return -np.sum(np.log(np.abs(transformed_data))) + 0.5 * len(data) * np.log(var)
+
+    # lambda 범위 내에서 최적화
+    result = minimize_scalar(neg_log_likelihood, bounds=(lambda_min, lambda_max), method='bounded')
+    best_lambda = result.x
+    
+    # 최적의 lambda로 변환 데이터 생성
+    transformed_data = boxcox_transformed(data, best_lambda)
+
+    original_min, original_max = data.min(), data.max()
+    transformed_min, transformed_max = transformed_data.min(), transformed_data.max()
+    transformed_data = (transformed_data - transformed_min) / (transformed_max - transformed_min)  # normalize to [0, 1]
+    is_scale = False
+    if original_max - original_min > scale_gamma:
+        is_scale = True
+        transformed_data = transformed_data * (original_max - original_min) + original_min  # scale to original min/max
+    else:
+        transformed_data = transformed_data * (scale_gamma) + original_min
+    # 변환 결과를 다시 텐서로 변환하고 원래 형태로 복원
+
+    normalized_scores = torch.tensor(transformed_data, device=device).unsqueeze(0)
+
+    return normalized_scores, is_scale
+
+
+def temporal_aware_feature_smoothing(kernel_size, features):
+    padding_size = kernel_size // 2
+    padded_features = torch.cat((features[0].repeat(padding_size, 1), features, features[-1].repeat(padding_size, 1)), dim=0)
+    kernel = torch.ones(padded_features.shape[1], 1, kernel_size).cuda() / kernel_size
+    padded_features = padded_features.unsqueeze(0).permute(0, 2, 1)  # (1, 257, 104)
+    padded_features = padded_features.float()
+
+    temporal_aware_features = F.conv1d(padded_features, kernel, padding=0, groups=padded_features.shape[1])
+    temporal_aware_features = temporal_aware_features.permute(0, 2, 1)
+    temporal_aware_features = temporal_aware_features[0]
+
+    return temporal_aware_features
+
+
+def kmeans_clustering(k, features):
+    kmeans = KMeans(n_clusters=k, n_init=10, random_state=42)
+    kmeans_labels = kmeans.fit_predict(np.array(features.cpu()))
+    kmeans_labels = torch.tensor(kmeans_labels)
+
+    return kmeans_labels
+
+
+def segment_scenes_by_cluster(cluster_labels):
+    scene_segments = []
+    start_idx = 0
+
+    current_label = cluster_labels[0]
+    for i in range(1, len(cluster_labels)):
+        if cluster_labels[i] != current_label:
+            scene_segments.append([start_idx, i])  ### start_idx 이상, i 미만 까지 같은 레이블
+            start_idx = i
+            current_label = cluster_labels[i]
+    
+    scene_segments.append([start_idx, len(cluster_labels)])
+
+    return scene_segments
+
+
+def get_proposals_with_scores(scene_segments, frame_scores, num_frames, prior):
+    cum_scores = torch.cumsum(frame_scores, dim=1)[0]
+    proposals = []
+    proposals_static_scores = []
+    for i in range(len(scene_segments)):
+        for j in range(i, len(scene_segments)):
+            start = scene_segments[i][0]
+            last = scene_segments[j][1]
+            if (last - start) > num_frames * prior:
+                continue
+            score_static = extract_static_score(start, last, cum_scores, len(cum_scores), frame_scores).item()
+            
+            proposals.append([start, last])
+            proposals_static_scores.append(round(score_static, 4))
+
+    return proposals, proposals_static_scores
+
+
+def generate_proposal_revise(video_features, gt, sentences, stride, hyperparams):
     num_frames = video_features.shape[0]
-    ground_truth = [round(gt[0] / duration * num_frames, 0), round(gt[1] / duration * num_frames, 0)]
-    scores, final_proposals, final_proposals_scores = calc_scores(video_features, sentences, gt, duration, gamma, kmeans_k, prior, temporal_window_size, is_clip, is_blip)
-    cum_scores = torch.cumsum(scores, dim=1)[0]
+    if hyperparams['is_clip']:
+        with torch.no_grad():
+           text_tokens = clip.tokenize(sentences).to(device='cuda')
+           text_feat = clip_text_encoder(text_tokens)
+        v1 = F.normalize(text_feat, p=2, dim=1)  # Normalize along feature dimension
+        v2 = F.normalize(torch.tensor(video_features, device='cuda', dtype=v1.dtype), p=2, dim=1)  # Normalize along feature dimension
+        scores = torch.matmul(v2, v1.T).squeeze()
+        scores = scores.unsqueeze(0)
+    else:
+        with torch.no_grad():
+            text = model.tokenizer(sentences, padding='max_length', truncation=True, max_length=35, return_tensors="pt").to(
+                'cuda')
+            text_output = model.Qformer.bert(text.input_ids, attention_mask=text.attention_mask, return_dict=True)
+            text_feat = model.text_proj(text_output.last_hidden_state[:, 0, :])
+        v1 = F.normalize(text_feat, dim=-1)
+        v2 = F.normalize(torch.tensor(video_features, device='cuda', dtype=v1.dtype), dim=-1)
+        scores = torch.einsum('md,npd->mnp', v1, v2)
+        scores, scores_idx = scores.max(dim=-1)
+        scores = scores.mean(dim=0, keepdim=True)
+    
+    # scores > 0.2인 마스킹 생성 (Boolean 형태 유지)
+    initial_masks = (scores > 0 if hyperparams['is_clip'] or hyperparams['is_blip'] else scores > 0.2)
+    masks, masked_indices = scores_masking(scores, initial_masks)
 
-    masks = (scores > 0.2).float()
-    scores = scores * masks
-    stride = min(stride, scores.size(-1) // 2)
+    # Alignment adjustment of similarity scores
+    data = scores[:, masks].flatten().cpu().numpy()   # 마스크된 부분만 가져오기    
+    normalized_scores, is_scale = alignment_adjustment(data, hyperparams['gamma'], scores.device, lambda_max=2, lambda_min=-2)
+    
+    video_features = torch.tensor(video_features).cuda()
+    if hyperparams['is_clip']:
+        selected_video_features = video_features
+    else:
+        scores_idx = scores_idx.reshape(-1)
+        selected_video_features = video_features[torch.arange(num_frames), scores_idx]
+    time_features = (torch.arange(num_frames) / num_frames).unsqueeze(1).cuda()
+    selected_video_time_features = torch.cat((selected_video_features, time_features), dim=1)
+    selected_video_time_features = selected_video_time_features[masks]
+
+    # Temporal-aware vector smoothing
+    temporal_aware_features = temporal_aware_feature_smoothing(hyperparams['temporal_window_size'], selected_video_time_features)
+
+    # Kmeans Clustering
+    kmeans_k = min(hyperparams['kmeans_k'], max(2, len(masked_indices)))
+    kmeans_labels = kmeans_clustering(kmeans_k, temporal_aware_features)
+    
+    # Kmeans clusetring 결과에 따라 비디오 장면 Segmentation
+    scene_segments = segment_scenes_by_cluster(kmeans_labels)
+
+    # proposal generation by using scene segments integration
+    final_proposals, final_proposals_static_score = get_proposals_with_scores(scene_segments, normalized_scores, num_frames, hyperparams['prior'])
+
+    final_proposals = [
+        [
+            masked_indices[start].item() if start < len(masked_indices) else num_frames,
+            masked_indices[last].item() if last < len(masked_indices) else num_frames
+        ]
+        for start, last in final_proposals
+    ]
+    final_proposals = torch.tensor(final_proposals)
+    final_proposals_static_score = torch.tensor(final_proposals_static_score)
+
+    _, index_static = final_proposals_static_score.sort(descending=True)
+    final_proposals = final_proposals[index_static]
+    final_proposals_scores = final_proposals_static_score[index_static]
 
     #### dynamic scoring #####
-    dynamic_idxs, dynamic_scores = get_dynamic_scores(scores, stride, masks)
+    masked_scores = scores * initial_masks.float()
+    stride = min(stride, masked_scores.size(-1) // 2)
+
+    dynamic_idxs, dynamic_scores = get_dynamic_scores(masked_scores, stride, initial_masks.float())
     dynamic_frames = torch.round(dynamic_idxs * num_frames).int()
     
     for final_proposal in final_proposals:
@@ -492,31 +423,26 @@ def generate_proposal(video_features, sentences, gt, duration, stride, max_strid
                 break
             current_frame -= 1
         final_proposal[0] = current_frame
+
+    final_prefix = final_proposals[:, 0].clone().detach()
     #### dynamic scoring #####
 
-    final_proposals = final_proposals.clone()
-    final_scores = final_proposals_scores.clone()
-    final_prefix = final_proposals[:, 0].clone().detach()
-    final_scores, sort_idx = final_scores.sort(descending=True)
-    final_proposals = final_proposals[sort_idx]
-    final_prefix = final_prefix[sort_idx]
-    return [final_proposals], [final_scores], [final_prefix], scores, cum_scores, num_frames
+    return [final_proposals], [final_proposals_scores], [final_prefix], num_frames
 
 
-def localize(video_feature, duration, query_json, stride, max_stride, gamma, cand_num, kmeans_k, prior, temporal_window_size, use_llm=False, is_clip=False, is_blip=False):
+def localize(video_feature, duration, gt, query_json, stride, hyperparams, use_llm=False):
     answer = []
     for query in query_json:
-        # import pdb; pdb.set_trace()
-        gt = query['gt']
-        proposals, scores, pre_proposals, _, _, num_frames = generate_proposal(video_feature, query['descriptions'], gt, duration, stride, max_stride, gamma, kmeans_k, prior, temporal_window_size, is_clip, is_blip)
+        proposals, scores, pre_proposals, num_frames = generate_proposal_revise(video_feature, gt, query['descriptions'], stride, hyperparams)
+        
         if len(proposals[0]) == 0:
             static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
             dynamic_pred = np.array([0.0, 0.0, 0.0])
             scores = np.array([1.0, 1.0, 1.0])
         else:
-            static_pred = proposals[0][:cand_num]
-            dynamic_pred = pre_proposals[0][:cand_num]
-            scores = scores[0][:cand_num]
+            static_pred = proposals[0] / num_frames * duration
+            dynamic_pred = pre_proposals[0] / num_frames * duration
+            scores = scores[0]
             scores = scores / scores.max()
 
         query['response'] = []
@@ -530,17 +456,8 @@ def localize(video_feature, duration, query_json, stride, max_stride, gamma, can
         answer.append(query)
 
     proposals = []
-    for t in range(cand_num): ##################### 건들여봐야해!!! 성준아
-        proposals += [[p['response'][t]['static_start'], p['response'][t]['end'], p['response'][t]['confidence']] for p
-                      in answer if len(p['response']) > t]  ### only static
-    proposals = np.array(proposals)
-    proposals[:,:2] = proposals[:,:2] / num_frames * duration
+    cand_num = hyperparams['cand_num']
+    for t in range(cand_num):
+        proposals += [[p['response'][t]['static_start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answer if len(p['response']) > t]  ### only static
     
-    if use_llm:
-        return list(proposals[:cand_num])
-    
-    post_proposals = proposals
-    np.set_printoptions(precision=4, suppress=True)
-    post_proposals = select_proposal(np.array(post_proposals))
-    return post_proposals
-
+    return proposals
