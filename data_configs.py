@@ -12,7 +12,9 @@ DATASETS={
             "prior": 0.5,
             "temporal_window_size": 21,
             'is_clip': False,
-            'is_blip': False
+            'is_blip': False,
+            'is_blip2': True,
+            'is_internVideo': False
         },
         'splits': {
             'default': {
@@ -42,7 +44,7 @@ DATASETS={
         }
     },
     'charades_clip': {
-        'feature_path': './clip_feature/charades-sta/',
+        'feature_path': './datasets/Charades_CLIP/',
         'stride': 20,
         'max_stride_factor': 0.5,
         'hyper_parameters': {
@@ -54,7 +56,9 @@ DATASETS={
             "prior": 0.5,
             "temporal_window_size": 21,
             'is_clip': True,
-            'is_blip': False
+            'is_blip': False,
+            'is_blip2': False,
+            'is_internVideo': False
         },
         'splits': {
             'default': {
@@ -84,7 +88,7 @@ DATASETS={
         }
     },
     'charades_blip': {
-        'feature_path': './datasets/Charades-BLIP/',
+        'feature_path': './datasets/Charades_BLIP/',
         'stride': 20,
         'max_stride_factor': 0.5,
         'hyper_parameters': {
@@ -96,7 +100,9 @@ DATASETS={
             "prior": 0.5,
             "temporal_window_size": 21,
             'is_clip': False,
-            'is_blip': True
+            'is_blip': True,
+            'is_blip2': False,
+            'is_internVideo': False
         },
         'splits': {
             'default': {
@@ -125,8 +131,8 @@ DATASETS={
             },
         }
     },
-    'charades_InternVideo': {
-        'feature_path': './datasets/Charades_internVideo/',
+    'charades_internVideo': {
+        'feature_path': './datasets/Charades_InternVideo/',
         'stride': 20,
         'max_stride_factor': 0.5,
         'hyper_parameters': {
@@ -138,7 +144,9 @@ DATASETS={
             "prior": 0.5,
             "temporal_window_size": 21,
             'is_clip': False,
-            'is_blip': False
+            'is_blip': False,
+            'is_blip2': False,
+            'is_internVideo': True
         },
         'splits': {
             'default': {
@@ -180,7 +188,9 @@ DATASETS={
             "prior": 1,
             "temporal_window_size": 25,
             'is_clip': False,
-            'is_blip': False
+            'is_blip': False,
+            'is_blip2': True,
+            'is_internVideo': False
         },
         'splits': {
             'default': {
@@ -201,6 +211,19 @@ DATASETS={
         'feature_path': './datasets/QVHighlights_features/',
         'stride': 50,
         'max_stride_factor': 0.5,
+        'hyper_parameters': {
+            'stride': 40,
+            'max_stride_factor': 1,
+            "gamma": 0.8,
+            "cand_num": 17,
+            "kmeans_k": 5,
+            "prior": 1,
+            "temporal_window_size": 25,
+            'is_clip': False,
+            'is_blip': False,
+            'is_blip2': True,
+            'is_internVideo': False
+        },
         'splits': {
             'default': {
                 'annotation_file': 'dataset/qvhighlight/highlight_val_release.jsonl',
