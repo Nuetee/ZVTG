@@ -224,7 +224,7 @@ def extract_static_score(start, end, cum_scores, num_frames, scores):
 def scores_masking(scores, masks):
     # scores의 길이가 3 미만인 경우 initial_mask를 그대로 사용
     if scores.shape[1] < 3:
-        masks = masks.squeeze()
+        final_masks = masks.squeeze()
     else:
         # 양쪽 끝에 2씩 False로 패딩
         padded_masks = F.pad(masks, (1, 1), mode='constant', value=False)
