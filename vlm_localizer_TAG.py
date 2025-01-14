@@ -442,7 +442,6 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
     # proposal generation by using scene segments integration
     cum_scores = torch.cumsum(normalized_scores, dim=1)[0]
     final_proposals, final_proposals_static_score = get_proposals_with_scores(scene_segments, cum_scores, scores,num_frames, hyperparams['prior'])
-    import pdb;pdb.set_trace()
 
     final_proposals = [
         [
@@ -456,7 +455,7 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
     _, index_static = final_proposals_static_score.sort(descending=True)
     final_proposals = final_proposals[index_static]
     final_proposals_scores = final_proposals_static_score[index_static]
-    import pdb;pdb.set_trace()
+
     #### dynamic scoring #####
     masked_scores = scores * initial_masks.float()
     stride = min(stride, masked_scores.size(-1) // 2)
@@ -475,7 +474,6 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
 
     final_prefix = final_proposals[:, 0].clone().detach()
     #### dynamic scoring #####
-    import pdb;pdb.set_trace()
 
     return [final_proposals], [final_proposals_scores], [final_prefix], num_frames
 
