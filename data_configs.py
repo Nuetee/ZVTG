@@ -2,10 +2,7 @@ DATASETS={
     'charades': {
         'feature_path': './datasets/Charades/',
         'stride': 20,
-        'max_stride_factor': 0.5,
         'hyper_parameters': {
-            'stride': 20,
-            'max_stride_factor': 0.5,
             "gamma": 0.2,
             "cand_num": 12,
             "kmeans_k": 9,
@@ -46,10 +43,7 @@ DATASETS={
     'charades_clip': {
         'feature_path': './datasets/Charades_CLIP/',
         'stride': 20,
-        'max_stride_factor': 0.5,
         'hyper_parameters': {
-            'stride': 20,
-            'max_stride_factor': 0.5,
             "gamma": 0.2,
             "cand_num": 12,
             "kmeans_k": 9,
@@ -90,10 +84,7 @@ DATASETS={
     'charades_blip': {
         'feature_path': './datasets/Charades_BLIP/',
         'stride': 20,
-        'max_stride_factor': 0.5,
         'hyper_parameters': {
-            'stride': 20,
-            'max_stride_factor': 0.5,
             "gamma": 0.2,
             "cand_num": 12,
             "kmeans_k": 9,
@@ -134,10 +125,7 @@ DATASETS={
     'charades_internVideo': {
         'feature_path': './datasets/Charades_InternVideo/',
         'stride': 20,
-        'max_stride_factor': 0.5,
         'hyper_parameters': {
-            'stride': 20,
-            'max_stride_factor': 0.5,
             "gamma": 0.2,
             "cand_num": 12,
             "kmeans_k": 9,
@@ -178,10 +166,7 @@ DATASETS={
     'activitynet': {
         'feature_path': './datasets/ActivityNet/',
         'stride': 40,
-        'max_stride_factor': 1,
         'hyper_parameters': {
-            'stride': 40,
-            'max_stride_factor': 1,
             "gamma": 0.8,
             "cand_num": 17,
             "kmeans_k": 5,
@@ -210,10 +195,7 @@ DATASETS={
     'qvhighlight': {
         'feature_path': './datasets/QVHighlights_features/',
         'stride': 50,
-        'max_stride_factor': 0.5,
         'hyper_parameters': {
-            'stride': 40,
-            'max_stride_factor': 1,
             "gamma": 0.8,
             "cand_num": 17,
             "kmeans_k": 5,

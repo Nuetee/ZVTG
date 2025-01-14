@@ -14,7 +14,8 @@ def get_args():
     parser.add_argument('--dataset', default='charades', type=str, help='Specify the dataset. See supported datasets in data_configs.py.')
     parser.add_argument('--split', default='default', type=str, help='Specify the split. See supported splits in data_configs.py.')
     parser.add_argument('--use_llm', action='store_true', help='Enable use llm')
-    parser.add_argument('--llm_output', default=None, type=str, help='LLM prompt output. If not specified, use only VLM for evaluation.')
+    parser.add_argument('--kmeans_gpu', action='store_true', help='Enable use GPU KMeans')
+    parser.add_argument('--llm_output', default=None, type=str, help='LLM prompt output. If not specified, use nonly VLM for evaluation.')
 
     return parser.parse_args()
 
@@ -33,7 +34,7 @@ def calc_iou2(candidates, gt):
     union = e - s
     return inter.clip(min=0) / union
 
-def eval_without_llm(data, feature_path, stride, hyperparams):
+def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
     ious = []
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
@@ -46,7 +47,7 @@ def eval_without_llm(data, feature_path, stride, hyperparams):
         for i in range(len(ann['sentences'])):
             gt = ann['timestamps'][i]
             query_json = [{'descriptions': ann['sentences'][i]}]
-            proposals = localize(video_feature, duration, query_json, stride, hyperparams)
+            proposals = localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
             proposals = select_proposal(np.array(proposals))
 
             iou_ = calc_iou(proposals[:1], gt)[0]
@@ -60,7 +61,7 @@ def eval_without_llm(data, feature_path, stride, hyperparams):
         print(f'R@{th}:', r / len(ious))
 
 
-def eval_with_llm(data, feature_path, stride, hyperparams):
+def eval_with_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
     ious = []
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
@@ -73,12 +74,12 @@ def eval_with_llm(data, feature_path, stride, hyperparams):
         for i in range(len(ann['sentences'])):
             gt = ann['timestamps'][i]
             query_json = [{'descriptions': ann['sentences'][i]}]
-            proposals = localize(video_feature, duration, query_json, stride, hyperparams)
+            proposals = localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
             
             if 'query_json' in ann['response'][i]:
                 for j in range(len(ann['response'][i]['query_json'][0]['descriptions'])):
                     query_json = [{'descriptions': ann['response'][i]['query_json'][0]['descriptions'][j]}]
-                    proposals += localize(video_feature, duration, query_json, stride, hyperparams)
+                    proposals += localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
 
             proposals = select_proposal(np.array(proposals))
         
@@ -93,7 +94,7 @@ def eval_with_llm(data, feature_path, stride, hyperparams):
         print(f'R@{th}:', r / len(ious))
 
 
-def eval(data, use_llm, feature_path, stride, hyperparams, pad_sec=0.0):
+def eval(data, feature_path, stride, hyperparams, use_llm, kmeans_gpu, pad_sec=0.0):
     ious = []
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
@@ -111,7 +112,14 @@ def eval(data, use_llm, feature_path, stride, hyperparams, pad_sec=0.0):
         for i in range(len(ann['sentences'])):
             gt = ann['timestamps'][i]
             query_json = [{'descriptions': ann['sentences'][i]}]
-            proposals = localize(video_feature, duration, query_json, stride, hyperparams, use_llm)
+            proposals = localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
+            
+            if use_llm:
+                if 'query_json' in ann['response'][i]:
+                    for j in range(len(ann['response'][i]['query_json'][0]['descriptions'])):
+                        query_json = [{'descriptions': ann['response'][i]['query_json'][0]['descriptions'][j]}]
+                        proposals += localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
+
             proposals = select_proposal(np.array(proposals))
 
             s, e = ann['timestamps'][i]
@@ -129,7 +137,7 @@ def eval(data, use_llm, feature_path, stride, hyperparams, pad_sec=0.0):
         print(f'R@{th}:', r / len(ious))
 
 
-def eval_qvhighlight(data, feature_path, stride, hyperparams):
+def eval_qvhighlight(data, feature_path, stride, hyperparams, kmeans_gpu):
     submission = []
     for ann in tqdm(data):
         vid = ann['vid']
@@ -140,7 +148,7 @@ def eval_qvhighlight(data, feature_path, stride, hyperparams):
         video_feature_path = os.path.join(feature_path, vid+'.npy')
         video_feature = np.load(video_feature_path)
 
-        proposals = localize(video_feature, duration, query_json, stride, hyperparams)
+        proposals = localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
         proposals, proposal_scores = select_proposal_with_score(np.array(proposals))
         
         submission.append({
@@ -164,17 +172,16 @@ if __name__=='__main__':
         with open(dataset['splits'][args.split]['annotation_file']) as f:
             data = f.readlines()
         data = [json.loads(d) for d in data]
-        eval_qvhighlight(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'])
+        eval_qvhighlight(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'], args.kmeans_gpu)
     else:
         if args.llm_output and os.path.exists(args.llm_output):
             with open(args.llm_output) as f:
                 data = json.load(f)
             if args.use_llm:
-                eval_with_llm(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'])
+                eval_with_llm(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'], args.kmeans_gpu)
             else:
-                eval_without_llm(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'])
+                eval_without_llm(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'], args.kmeans_gpu)
         else:
             with open(dataset['splits'][args.split]['annotation_file']) as f:
                 data = json.load(f)
-            eval(data, args.use_llm, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'], dataset['splits'][args.split]['pad_sec'])
-        
+            eval(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'], args.use_llm, args.kmeans_gpu, dataset['splits'][args.split]['pad_sec'])

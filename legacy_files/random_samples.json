@@ -1,0 +1,685 @@
+{
+    "0F7LW": {
+        "duration": 30.46,
+        "timestamps": [
+            [
+                0.8,
+                8.1
+            ],
+            [
+                12.6,
+                19.5
+            ],
+            [
+                25.0,
+                31.0
+            ],
+            [
+                25.0,
+                31.0
+            ],
+            [
+                12.6,
+                19.5
+            ],
+            [
+                0.0,
+                4.6
+            ],
+            [
+                12.6,
+                19.5
+            ]
+        ],
+        "sentences": [
+            "person opens a closet door.",
+            "person takes down a toy laptop.",
+            "person turns off the light.",
+            "person turning off the light behind them.",
+            "a person takes a laptop from a closet shelf.",
+            "a person runs into the closet.",
+            "person takes a laptop from the shelf."
+        ],
+        "masked": [
+            {
+                "subject_masked": [
+                    "[MASK] opens a closet door."
+                ],
+                "verb_masked": [
+                    "A person [MASK] a closet door."
+                ],
+                "object_masked": [
+                    "A person opens [MASK]."
+                ],
+                "prepositional_phrase_masked": []
+            },
+            {
+                "subject_masked": [
+                    "[MASK] is taking down a toy laptop."
+                ],
+                "verb_masked": [
+                    "A person is [MASK] down a toy laptop."
+                ],
+                "object_masked": [
+                    "A person is taking down [MASK]."
+                ],
+                "prepositional_phrase_masked": []
+            },
+            {
+                "subject_masked": [
+                    "[MASK] turns off the light."
+                ],
+                "verb_masked": [
+                    "The person [MASK] off the light."
+                ],
+                "object_masked": [
+                    "The person turns off [MASK]."
+                ],
+                "prepositional_phrase_masked": []
+            },
+            {
+                "subject_masked": [
+                    "[MASK] is turning off the light behind them."
+                ],
+                "verb_masked": [
+                    "A person is [MASK] off the light behind them."
+                ],
+                "object_masked": [
+                    "A person is turning off [MASK] behind them."
+                ],
+                "prepositional_phrase_masked": [
+                    "A person is turning off the light [MASK]."
+                ]
+            },
+            {
+                "subject_masked": [
+                    "[MASK] takes a laptop from a closet shelf."
+                ],
+                "verb_masked": [
+                    "A person [MASK] a laptop from a closet shelf."
+                ],
+                "object_masked": [
+                    "A person takes [MASK] from a closet shelf."
+                ],
+                "prepositional_phrase_masked": [
+                    "A person takes a laptop [MASK]."
+                ]
+            },
+            {
+                "subject_masked": [
+                    "[MASK] runs into the closet."
+                ],
+                "verb_masked": [
+                    "A person [MASK] into the closet."
+                ],
+                "object_masked": [],
+                "prepositional_phrase_masked": [
+                    "A person runs [MASK]."
+                ]
+            },
+            {
+                "subject_masked": [
+                    "[MASK] takes a laptop from the shelf."
+                ],
+                "verb_masked": [
+                    "A person [MASK] a laptop from the shelf."
+                ],
+                "object_masked": [
+                    "A person takes [MASK] from the shelf."
+                ],
+                "prepositional_phrase_masked": [
+                    "A person takes a laptop [MASK]."
+                ]
+            }
+        ]
+    },
+    "2OREK": {
+        "duration": 30.21,
+        "timestamps": [
+            [
+                11.5,
+                17.6
+            ]
+        ],
+        "sentences": [
+            "looking out the window in a curious manner."
+        ],
+        "masked": [
+            {
+                "subject_masked": [],
+                "verb_masked": [],
+                "object_masked": [],
+                "prepositional_phrase_masked": [
+                    "[MASK] curiously."
+                ]
+            }
+        ]
+    },
+    "0WYBK": {
+        "duration": 15.5,
+        "timestamps": [
+            [
+                1.8,
+                8.8
+            ],
+            [
+                1.9,
+                7.4
+            ],
+            [
+                8.2,
+                12.8
+            ]
+        ],
+        "sentences": [
+            "person eating a sandwich.",
+            "person eating some groceries.",
+            "that same person puts the book down on the floor."
+        ],
+        "masked": [
+            {
+                "subject_masked": [
+                    "[MASK] is eating a sandwich."
+                ],
+                "verb_masked": [
+                    "A person is [MASK] a sandwich."
+                ],
+                "object_masked": [
+                    "A person is eating [MASK]."
+                ],
+                "prepositional_phrase_masked": []
+            },
+            {
+                "subject_masked": [
+                    "[MASK] is eating some groceries."
+                ],
+                "verb_masked": [
+                    "A person is [MASK] some groceries."
+                ],
+                "object_masked": [
+                    "A person is eating [MASK]."
+                ],
+                "prepositional_phrase_masked": []
+            },
+            {
+                "subject_masked": [
+                    "[MASK] puts the book down on the floor."
+                ],
+                "verb_masked": [
+                    "That person [MASK] the book down on the floor."
+                ],
+                "object_masked": [
+                    "That person puts [MASK] down on the floor."
+                ],
+                "prepositional_phrase_masked": [
+                    "That person puts the book [MASK]."
+                ]
+            }
+        ]
+    },
+    "LKH9A": {
+        "duration": 33.08,
+        "timestamps": [
+            [
+                0.0,
+                6.0
+            ],
+            [
+                23.0,
+                29.2
+            ],
+            [
+                22.3,
+                27.0
+            ],
+            [
+                6.4,
+                11.9
+            ]
+        ],
+        "sentences": [
+            "person turns on the light.",
+            "person puts the book down.",
+            "the person closes the book.",
+            "person take a book off the top of the shelf."
+        ],
+        "masked": [
+            {
+                "subject_masked": [
+                    "[MASK] turns on the light."
+                ],
+                "verb_masked": [
+                    "A person [MASK] on the light."
+                ],
+                "object_masked": [
+                    "A person turns on [MASK]."
+                ],
+                "prepositional_phrase_masked": []
+            },
+            {
+                "subject_masked": [
+                    "[MASK] puts the book down."
+                ],
+                "verb_masked": [
+                    "A person [MASK] the book down."
+                ],
+                "object_masked": [
+                    "A person puts [MASK] down."
+                ],
+                "prepositional_phrase_masked": []
+            },
+            {
+                "subject_masked": [
+                    "[MASK] closes the book."
+                ],
+                "verb_masked": [
+                    "The person [MASK] the book."
+                ],
+                "object_masked": [
+                    "The person closes [MASK]."
+                ],
+                "prepositional_phrase_masked": []
+            },
+            {
+                "subject_masked": [
+                    "[MASK] takes a book off the top of the shelf."
+                ],
+                "verb_masked": [
+                    "A person [MASK] a book off the top of the shelf."
+                ],
+                "object_masked": [
+                    "A person takes [MASK] off the top of the shelf."
+                ],
+                "prepositional_phrase_masked": [
+                    "A person takes a book [MASK]."
+                ]
+            }
+        ]
+    },
+    "W5P6B": {
+        "duration": 30.0,
+        "timestamps": [
+            [
+                9.3,
+                17.3
+            ]
+        ],
+        "sentences": [
+            "a person sits in a chair."
+        ],
+        "masked": [
+            {
+                "subject_masked": [
+                    "[MASK] is sitting in a chair."
+                ],
+                "verb_masked": [
+                    "A person is [MASK] in a chair."
+                ],
+                "object_masked": [
+                    "A person is sitting in [MASK]."
+                ],
+                "prepositional_phrase_masked": [
+                    "A person is sitting [MASK]."
+                ]
+            }
+        ]
+    },
+    "OWRDE": {
+        "duration": 43.79,
+        "timestamps": [
+            [
+                0.9,
+                13.0
+            ],
+            [
+                0.9,
+                13.0
+            ],
+            [
+                20.8,
+                36.9
+            ],
+            [
+                20.8,
+                36.9
+            ],
+            [
+                20.8,
+                36.9
+            ],
+            [
+                0.9,
+                13.0
+            ]
+        ],
+        "sentences": [
+            "person eating some food.",
+            "a person quickly eats something.",
+            "person sits on stairs to put on shoes.",
+            "person puts on tennis shoes.",
+            "person puts on shoes.",
+            "person unwraps & eats something."
+        ],
+        "masked": [
+            {
+                "subject_masked": [
+                    "[MASK] is eating some food."
+                ],
+                "verb_masked": [
+                    "A person is [MASK] some food."
+                ],
+                "object_masked": [
+                    "A person is eating [MASK]."
+                ],
+                "prepositional_phrase_masked": []
+            },
+            {
+                "subject_masked": [
+                    "[MASK] quickly eats something."
+                ],
+                "verb_masked": [
+                    "A person [MASK] something."
+                ],
+                "object_masked": [
+                    "A person quickly eats [MASK]."
+                ],
+                "prepositional_phrase_masked": []
+            },
+            {
+                "subject_masked": [
+                    "[MASK] is sitting on the stairs to put on shoes."
+                ],
+                "verb_masked": [
+                    "A person is [MASK] on the stairs to put on shoes.",
+                    "A person is sitting on the stairs to [MASK] shoes."
+                ],
+                "object_masked": [
+                    "A person is sitting on the stairs to put on [MASK]."
+                ],
+                "prepositional_phrase_masked": [
+                    "A person is sitting [MASK] to put on shoes."
+                ]
+            },
+            {
+                "subject_masked": [
+                    "[MASK] puts on tennis shoes."
+                ],
+                "verb_masked": [
+                    "A person [MASK] on tennis shoes."
+                ],
+                "object_masked": [
+                    "A person puts on [MASK]."
+                ],
+                "prepositional_phrase_masked": []
+            },
+            {
+                "subject_masked": [
+                    "[MASK] is putting on shoes."
+                ],
+                "verb_masked": [
+                    "A person is [MASK] on shoes."
+                ],
+                "object_masked": [
+                    "A person is putting on [MASK]."
+                ],
+                "prepositional_phrase_masked": []
+            },
+            {
+                "subject_masked": [
+                    "[MASK] unwraps and eats something."
+                ],
+                "verb_masked": [
+                    "A person [MASK] and eats something.",
+                    "A person unwraps and [MASK] something."
+                ],
+                "object_masked": [
+                    "A person unwraps and eats [MASK]."
+                ],
+                "prepositional_phrase_masked": []
+            }
+        ]
+    },
+    "87Y64": {
+        "duration": 30.25,
+        "timestamps": [
+            [
+                6.5,
+                13.5
+            ],
+            [
+                0.4,
+                6.1
+            ],
+            [
+                0.0,
+                5.5
+            ]
+        ],
+        "sentences": [
+            "a person is throwing a book to another person.",
+            "person run to the other side of the room.",
+            "a person is sitting on a bed."
+        ],
+        "masked": [
+            {
+                "subject_masked": [
+                    "[MASK] is throwing a book to another person."
+                ],
+                "verb_masked": [
+                    "A person is [MASK] a book to another person."
+                ],
+                "object_masked": [
+                    "A person is throwing [MASK] to another person."
+                ],
+                "prepositional_phrase_masked": [
+                    "A person is throwing a book [MASK]."
+                ]
+            },
+            {
+                "subject_masked": [
+                    "[MASK] runs to the other side of the room."
+                ],
+                "verb_masked": [
+                    "A person [MASK] to the other side of the room."
+                ],
+                "object_masked": [],
+                "prepositional_phrase_masked": [
+                    "A person runs [MASK]."
+                ]
+            },
+            {
+                "subject_masked": [
+                    "[MASK] is sitting on a bed."
+                ],
+                "verb_masked": [
+                    "A person is [MASK] on a bed."
+                ],
+                "object_masked": [
+                    "A person is sitting on [MASK]."
+                ],
+                "prepositional_phrase_masked": [
+                    "A person is sitting [MASK]."
+                ]
+            }
+        ]
+    },
+    "L39A4": {
+        "duration": 37.33,
+        "timestamps": [
+            [
+                0.6,
+                7.8
+            ]
+        ],
+        "sentences": [
+            "a person sits on the floor reading a book."
+        ],
+        "masked": [
+            {
+                "subject_masked": [
+                    "[MASK] is sitting on the floor reading a book."
+                ],
+                "verb_masked": [
+                    "A person is [MASK] on the floor reading a book.",
+                    "A person is sitting on the floor [MASK] a book."
+                ],
+                "object_masked": [
+                    "A person is sitting on the floor reading [MASK]."
+                ],
+                "prepositional_phrase_masked": [
+                    "A person is sitting [MASK] reading a book."
+                ]
+            }
+        ]
+    },
+    "D4D2T": {
+        "duration": 23.67,
+        "timestamps": [
+            [
+                13.9,
+                25.0
+            ],
+            [
+                9.4,
+                15.1
+            ],
+            [
+                13.9,
+                25.0
+            ],
+            [
+                2.8,
+                12.9
+            ]
+        ],
+        "sentences": [
+            "person eats a sandwich.",
+            "person takes some food out of a box.",
+            "person eats it.",
+            "person opens a box."
+        ],
+        "masked": [
+            {
+                "subject_masked": [
+                    "[MASK] is eating a sandwich."
+                ],
+                "verb_masked": [
+                    "The person is [MASK] a sandwich."
+                ],
+                "object_masked": [
+                    "The person is eating [MASK]."
+                ],
+                "prepositional_phrase_masked": []
+            },
+            {
+                "subject_masked": [
+                    "[MASK] takes food out of a box."
+                ],
+                "verb_masked": [
+                    "A person [MASK] food out of a box."
+                ],
+                "object_masked": [
+                    "A person takes [MASK] out of a box."
+                ],
+                "prepositional_phrase_masked": [
+                    "A person takes food [MASK]."
+                ]
+            },
+            {
+                "subject_masked": [
+                    "[MASK] is eating it."
+                ],
+                "verb_masked": [
+                    "A person is [MASK] it."
+                ],
+                "object_masked": [
+                    "A person is eating [MASK]."
+                ],
+                "prepositional_phrase_masked": []
+            },
+            {
+                "subject_masked": [
+                    "[MASK] opens a box."
+                ],
+                "verb_masked": [
+                    "A person [MASK] a box."
+                ],
+                "object_masked": [
+                    "A person opens [MASK]."
+                ],
+                "prepositional_phrase_masked": []
+            }
+        ]
+    },
+    "QMKZV": {
+        "duration": 33.67,
+        "timestamps": [
+            [
+                4.4,
+                12.1
+            ],
+            [
+                12.7,
+                22.4
+            ],
+            [
+                4.4,
+                12.1
+            ],
+            [
+                4.4,
+                12.1
+            ]
+        ],
+        "sentences": [
+            "a person undresses.",
+            "person put clothes away.",
+            "person starts undressing.",
+            "person begins to undress."
+        ],
+        "masked": [
+            {
+                "subject_masked": [
+                    "[MASK] is undressing."
+                ],
+                "verb_masked": [
+                    "A person is [MASK]."
+                ],
+                "object_masked": [],
+                "prepositional_phrase_masked": []
+            },
+            {
+                "subject_masked": [
+                    "[MASK] put the clothes away."
+                ],
+                "verb_masked": [
+                    "A person [MASK] the clothes away."
+                ],
+                "object_masked": [
+                    "A person put [MASK] away."
+                ],
+                "prepositional_phrase_masked": []
+            },
+            {
+                "subject_masked": [
+                    "[MASK] is starting to undress."
+                ],
+                "verb_masked": [
+                    "A person is [MASK] to undress."
+                ],
+                "object_masked": [],
+                "prepositional_phrase_masked": []
+            },
+            {
+                "subject_masked": [
+                    "[MASK] starts to undress."
+                ],
+                "verb_masked": [
+                    "A person [MASK] to undress."
+                ],
+                "object_masked": [],
+                "prepositional_phrase_masked": []
+            }
+        ]
+    }
+}

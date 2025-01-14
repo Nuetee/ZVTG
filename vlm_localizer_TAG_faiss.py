@@ -166,7 +166,7 @@ def plot_scores(scores, normalized_scores, timestamps, filename="scores_plot.png
 def feature_tsne(features, sentence, gt, save_dir):
     import matplotlib.pyplot as plt
     from sklearn.manifold import TSNE
-    # from adjustText import adjust_text
+    from adjustText import adjust_text
 
     # Normalize features
     normalized_features = torch.nn.functional.normalize(features, p=2, dim=1)
@@ -217,7 +217,7 @@ def extract_static_score(start, end, cum_scores, num_frames, scores):
     if kernel_size != num_frames:
         static_score = inner_sum / kernel_size - outer_sum / (num_frames - kernel_size)
     else:
-        static_score = inner_sum / kernel_size - (scores[0][0] + scores[0][-1] / 2)
+        static_score = inner_sum / kernel_size - (scores[0][0] + scores[0][-1] / 2)  #### 임시방편 느낌
         # static_score = inner_sum / kernel_size
     return static_score
 
@@ -225,7 +225,7 @@ def extract_static_score(start, end, cum_scores, num_frames, scores):
 def scores_masking(scores, masks):
     # scores의 길이가 3 미만인 경우 initial_mask를 그대로 사용
     if scores.shape[1] < 3:
-        masks = masks.squeeze()
+        final_masks = masks.squeeze()
     else:
         # 양쪽 끝에 2씩 False로 패딩
         padded_masks = F.pad(masks, (1, 1), mode='constant', value=False)
@@ -238,16 +238,16 @@ def scores_masking(scores, masks):
                 final_masks[:, i] = 0
 
         # 패딩 제거하여 원래 크기의 마스크로 복원
-        masks = final_masks[:, 1:-1].squeeze()
+        final_masks = final_masks[:, 1:-1].squeeze()
     
     # 모든 값이 False일 경우 전부 True로 설정
-    if not masks.any():
-        masks[:] = True
+    if not final_masks.any():
+        final_masks[:] = True
 
     # final_mask를 기반으로 masked_indices 계산
-    masked_indices = torch.nonzero(masks, as_tuple=True)[0]  # 마스킹된 실제 인덱스 저장
+    masked_indices = torch.nonzero(final_masks, as_tuple=True)[0]  # 마스킹된 실제 인덱스 저장
     
-    return masks, masked_indices
+    return final_masks, masked_indices
 
 
 def alignment_adjustment(data, scale_gamma, device, lambda_max=2, lambda_min=-2):
@@ -305,40 +305,64 @@ def temporal_aware_feature_smoothing(kernel_size, features):
     return temporal_aware_features
 
 
+# def kmeans_clustering(k, features):
+#     kmeans = KMeans(n_clusters=k, n_init=10, random_state=42)
+#     kmeans_labels = kmeans.fit_predict(np.array(features.cpu()))
+#     kmeans_labels = torch.tensor(kmeans_labels)
+
+#     return kmeans_labels
+
+# region
+import faiss
 def kmeans_clustering(k, features):
-    kmeans = KMeans(n_clusters=k, n_init=10, random_state=42)
-    kmeans_labels = kmeans.fit_predict(np.array(features.cpu()))
-    kmeans_labels = torch.tensor(kmeans_labels)
+    # Convert features to NumPy array and ensure it is C-contiguous
+    features_np = np.ascontiguousarray(np.array(features.cpu(), dtype='float32'))
+
+    # Initialize FAISS KMeans
+    kmeans = faiss.Kmeans(d=features_np.shape[1], k=k, niter=20, verbose=False)
+
+    # Perform clustering
+    kmeans.train(features_np)
+
+    # Assign clusters
+    index = faiss.IndexFlatL2(features_np.shape[1])
+    index.add(kmeans.centroids)
+    _, kmeans_labels = index.search(features_np, 1)
+
+    # Convert cluster assignments to PyTorch tensor
+    kmeans_labels = torch.tensor(kmeans_labels.flatten())
 
     return kmeans_labels
+# endregion
 
 
-def kmeans_clustering_gpu(k, features):
-    from cuml.cluster import KMeans
-    """
-    GPU 기반 KMeans 클러스터링 (cuML 활용)
+# from cuml.cluster import KMeans
 
-    Args:
-        k (int): Number of clusters
-        features (torch.Tensor): Input features (on CPU or GPU)
+# def kmeans_clustering(k, features):
+#     """
+#     GPU 기반 KMeans 클러스터링 (cuML 활용)
 
-    Returns:
-        torch.Tensor: Cluster labels as a Torch tensor (on CPU)
-    """
-    # 입력 데이터를 NumPy 배열로 변환
-    if features.is_cuda:
-        features_np = features.cpu().numpy().astype(np.float32)
-    else:
-        features_np = features.numpy().astype(np.float32)
+#     Args:
+#         k (int): Number of clusters
+#         features (torch.Tensor): Input features (on CPU or GPU)
 
-    # cuML KMeans 초기화 및 실행
-    kmeans = KMeans(n_clusters=k, n_init=10, random_state=42, max_iter=300)
-    kmeans_labels = kmeans.fit_predict(features_np)
+#     Returns:
+#         torch.Tensor: Cluster labels as a Torch tensor (on CPU)
+#     """
+#     # 입력 데이터를 NumPy 배열로 변환
+#     if features.is_cuda:
+#         features_np = features.cpu().numpy().astype(np.float32)
+#     else:
+#         features_np = features.numpy().astype(np.float32)
 
-    # 결과를 Torch 텐서로 변환 (CPU)
-    kmeans_labels = torch.tensor(kmeans_labels, dtype=torch.int64)
+#     # cuML KMeans 초기화 및 실행
+#     kmeans = KMeans(n_clusters=k, n_init=10, random_state=42, max_iter=300)
+#     kmeans_labels = kmeans.fit_predict(features_np)
 
-    return kmeans_labels
+#     # 결과를 Torch 텐서로 변환 (CPU)
+#     kmeans_labels = torch.tensor(kmeans_labels, dtype=torch.int64)
+
+#     return kmeans_labels
 
 
 def segment_scenes_by_cluster(cluster_labels):
@@ -353,16 +377,16 @@ def segment_scenes_by_cluster(cluster_labels):
             current_label = cluster_labels[i]
     
     scene_segments.append([start_idx, len(cluster_labels)])
-    scene_segments.append([len(cluster_labels), len(cluster_labels)])
 
     return scene_segments
 
 
-def get_proposals_with_scores(scene_segments, cum_scores, frame_scores, num_frames, prior):
+def get_proposals_with_scores(scene_segments, frame_scores, num_frames, prior):
+    cum_scores = torch.cumsum(frame_scores, dim=1)[0]
     proposals = []
     proposals_static_scores = []
     for i in range(len(scene_segments)):
-        for j in range(i + 1, len(scene_segments)):
+        for j in range(i, len(scene_segments)):
             start = scene_segments[i][0]
             last = scene_segments[j][1]
             if (last - start) > num_frames * prior:
@@ -375,7 +399,7 @@ def get_proposals_with_scores(scene_segments, cum_scores, frame_scores, num_fram
     return proposals, proposals_static_scores
 
 
-def generate_proposal_revise(video_features, sentences, stride, hyperparams, kmeans_gpu):
+def generate_proposal_revise(video_features, sentences, stride, hyperparams):
     num_frames = video_features.shape[0]
     if hyperparams['is_clip']:
         with torch.no_grad():
@@ -431,17 +455,13 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
 
     # Kmeans Clustering
     kmeans_k = min(hyperparams['kmeans_k'], max(2, len(masked_indices)))
-    if kmeans_gpu:
-        kmeans_labels = kmeans_clustering_gpu(kmeans_k, temporal_aware_features)
-    else:
-        kmeans_labels = kmeans_clustering(kmeans_k, temporal_aware_features)
+    kmeans_labels = kmeans_clustering(kmeans_k, temporal_aware_features)
     
     # Kmeans clusetring 결과에 따라 비디오 장면 Segmentation
     scene_segments = segment_scenes_by_cluster(kmeans_labels)
 
     # proposal generation by using scene segments integration
-    cum_scores = torch.cumsum(normalized_scores, dim=1)[0]
-    final_proposals, final_proposals_static_score = get_proposals_with_scores(scene_segments, cum_scores, scores,num_frames, hyperparams['prior'])
+    final_proposals, final_proposals_static_score = get_proposals_with_scores(scene_segments, normalized_scores, num_frames, hyperparams['prior'])
 
     final_proposals = [
         [
@@ -452,6 +472,7 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
     ]
     final_proposals = torch.tensor(final_proposals)
     final_proposals_static_score = torch.tensor(final_proposals_static_score)
+
     _, index_static = final_proposals_static_score.sort(descending=True)
     final_proposals = final_proposals[index_static]
     final_proposals_scores = final_proposals_static_score[index_static]
@@ -478,10 +499,10 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
     return [final_proposals], [final_proposals_scores], [final_prefix], num_frames
 
 
-def localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu=False):
+def localize(video_feature, duration, query_json, stride, hyperparams, use_llm=False):
     answer = []
     for query in query_json:
-        proposals, scores, pre_proposals, num_frames = generate_proposal_revise(video_feature, query['descriptions'], stride, hyperparams, kmeans_gpu)
+        proposals, scores, pre_proposals, num_frames = generate_proposal_revise(video_feature, query['descriptions'], stride, hyperparams)
         
         if len(proposals[0]) == 0:
             static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
