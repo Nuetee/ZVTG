@@ -314,29 +314,17 @@ def kmeans_clustering(k, features):
 
 
 def kmeans_clustering_gpu(k, features):
+    import cupy as cp
     from cuml.cluster import KMeans
-    """
-    GPU 기반 KMeans 클러스터링 (cuML 활용)
+    # features를 cupy 배열로 변환하여 GPU 메모리에 올림
+    features_cp = cp.asarray(features.detach().cpu().numpy())  # PyTorch 텐서를 CPU -> NumPy -> CuPy로 변환
 
-    Args:
-        k (int): Number of clusters
-        features (torch.Tensor): Input features (on CPU or GPU)
-
-    Returns:
-        torch.Tensor: Cluster labels as a Torch tensor (on CPU)
-    """
-    # 입력 데이터를 NumPy 배열로 변환
-    if features.is_cuda:
-        features_np = features.cpu().numpy().astype(np.float32)
-    else:
-        features_np = features.numpy().astype(np.float32)
-
-    # cuML KMeans 초기화 및 실행
+    # cuML의 KMeans를 사용하여 GPU에서 클러스터링 수행
     kmeans = KMeans(n_clusters=k, n_init=10, random_state=42, max_iter=300)
-    kmeans_labels = kmeans.fit_predict(features_np)
+    kmeans_labels = kmeans.fit_predict(features_cp)
 
-    # 결과를 Torch 텐서로 변환 (CPU)
-    kmeans_labels = torch.tensor(kmeans_labels, dtype=torch.int64)
+    # 결과를 Torch 텐서로 변환하여 반환
+    kmeans_labels = torch.tensor(kmeans_labels.get())  # CuPy 배열을 NumPy로 변환 후 Torch 텐서로 변환
 
     return kmeans_labels
 

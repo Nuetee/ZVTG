@@ -327,34 +327,6 @@ def kmeans_clustering(k, features):
     return kmeans_labels
 
 
-def kmeans_clustering_gpu(k, features):
-    from cuml.cluster import KMeans
-    """
-    GPU 기반 KMeans 클러스터링 (cuML 활용)
-
-    Args:
-        k (int): Number of clusters
-        features (torch.Tensor): Input features (on CPU or GPU)
-
-    Returns:
-        torch.Tensor: Cluster labels as a Torch tensor (on CPU)
-    """
-    # 입력 데이터를 NumPy 배열로 변환
-    if features.is_cuda:
-        features_np = features.cpu().numpy().astype(np.float32)
-    else:
-        features_np = features.numpy().astype(np.float32)
-
-    # cuML KMeans 초기화 및 실행
-    kmeans = KMeans(n_clusters=k, n_init=10, random_state=42, max_iter=300)
-    kmeans_labels = kmeans.fit_predict(features_np)
-
-    # 결과를 Torch 텐서로 변환 (CPU)
-    kmeans_labels = torch.tensor(kmeans_labels, dtype=torch.int64)
-
-    return kmeans_labels
-
-
 def segment_scenes_by_cluster(cluster_labels):
     scene_segments = []
     start_idx = 0
@@ -378,7 +350,7 @@ def get_proposals_with_scores(scene_segments, cum_scores, frame_scores, num_fram
     for i in range(len(scene_segments)):
         for j in range(i + 1, len(scene_segments)):
             start = scene_segments[i][0]
-            last = scene_segments[j][1]
+            last = scene_segments[j][0]
             if (last - start) > num_frames * prior:
                 continue
             score_static = extract_static_score(start, last, cum_scores, len(cum_scores), frame_scores).item()
