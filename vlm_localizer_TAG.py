@@ -313,21 +313,46 @@ def kmeans_clustering(k, features):
     return kmeans_labels
 
 
-def kmeans_clustering_gpu(k, features):
-    import cupy as cp
-    from cuml.cluster import KMeans
-    # features를 cupy 배열로 변환하여 GPU 메모리에 올림
-    features_cp = cp.asarray(features.detach().cpu().numpy())  # PyTorch 텐서를 CPU -> NumPy -> CuPy로 변환
+def kmeans_clustering_gpu(k, features, n_iter=100, tol=1e-4):
+    # Ensure features are on GPU
+    torch.manual_seed(60)
+    features = features.cuda()
+    n_samples, n_features = features.shape
 
-    # cuML의 KMeans를 사용하여 GPU에서 클러스터링 수행
-    kmeans = KMeans(n_clusters=k, n_init=10, random_state=42, max_iter=300)
-    kmeans_labels = kmeans.fit_predict(features_cp)
+    # Initialize centroids using k-means++ algorithm
+    centroids = torch.empty((k, n_features), device=features.device)
+    # Step 1: Choose the first centroid randomly
+    random_idx = torch.randint(0, n_samples, (1,))
+    centroids[0] = features[random_idx]
 
-    # 결과를 Torch 텐서로 변환하여 반환
-    kmeans_labels = torch.tensor(kmeans_labels.get())  # CuPy 배열을 NumPy로 변환 후 Torch 텐서로 변환
+    # Step 2: Choose remaining centroids
+    for i in range(1, k):
+        # Compute squared distances from the closest centroid
+        distances = torch.min(torch.cdist(features, centroids[:i])**2, dim=1).values
+        probabilities = distances / distances.sum()
+        cumulative_probs = torch.cumsum(probabilities, dim=0)
+        random_value = torch.rand(1, device=features.device)
+        next_idx = torch.searchsorted(cumulative_probs, random_value).item()
+        centroids[i] = features[next_idx]
 
-    return kmeans_labels
+    # Perform k-means clustering
+    for i in range(n_iter):
+        # Calculate distances (broadcasting)
+        distances = torch.cdist(features, centroids, p=2)
 
+        # Assign clusters
+        labels = torch.argmin(distances, dim=1)
+
+        # Update centroids
+        new_centroids = torch.stack([features[labels == j].mean(dim=0) if (labels == j).sum() > 0 else centroids[j] for j in range(k)])
+
+        # Check for convergence
+        if torch.allclose(centroids, new_centroids, atol=tol):
+            break
+
+        centroids = new_centroids
+
+    return labels.cpu()
 
 def segment_scenes_by_cluster(cluster_labels):
     scene_segments = []

@@ -1,6 +1,7 @@
 from data_configs import DATASETS
 import argparse
 import numpy as np
+from chat_bots import get_chat_model
 import json
 from tqdm import tqdm
 from vlm_localizer import localize
@@ -8,12 +9,15 @@ from qvhhighlight_eval import eval_submission
 import os
 from llm_prompting import select_proposal, filter_and_integrate
 import pdb
+import time
+import itertools
 
 def get_args():
     parser = argparse.ArgumentParser(description='Evaluation for training-free video temporal grounding.')
     parser.add_argument('--dataset', default='charades', type=str, help='Specify the dataset. See supported datasets in data_configs.py.')
     parser.add_argument('--split', default='default', type=str, help='Specify the split. See supported splits in data_configs.py.')
     parser.add_argument('--llm_output', default=None, type=str, help='LLM prompt output. If not specified, use only VLM for evaluation.')
+    parser.add_argument('--api', action='store_true', help='Enable use GPT API call')
 
     return parser.parse_args()
 
@@ -27,15 +31,6 @@ def calc_iou(candidates, gt):
 
 
 def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
-    # region
-    single_query_ious = []
-    simultaneously_ious = []
-    sequentially_ious = []
-    single_query_recall = np.array([0, 0, 0])
-    simultaneously_recall = np.array([0, 0, 0])
-    sequentially_recall = np.array([0, 0, 0])
-    # k=0
-    # endregion
     ious = []
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
@@ -76,14 +71,6 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
             for t in range(3):
                 proposals += [[p['response'][t]['start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answers if len(p['response']) > t]
             
-            # region
-            original_query_proposals = proposals[:7]
-            integrated_sub_query_proposals = filter_and_integrate(sub_query_proposals, relation)
-
-            proposals_2 = original_query_proposals + integrated_sub_query_proposals
-            proposals_2 = np.array(proposals_2)
-            # endregion
-            
             # 총 12개의 proposals에서 앞 7개의 proposals 가져옴 -> 각 description 별 1개씩 + 3개
             proposals = proposals[:7] + filter_and_integrate(sub_query_proposals, relation)
 
@@ -97,67 +84,81 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
 
             gt_lengths.append(gt[1] - gt[0])
 
-            # region
-            if relation == 'single-query':
-                single_query_ious.append(max(iou_, 0))
-                single_query_recall += thresh <= iou_
-            elif relation == 'simultaneously':
-                simultaneously_ious.append(max(iou_, 0))
-                simultaneously_recall += thresh <= iou_
-            elif relation == 'sequentially':
-                sequentially_ious.append(max(iou_, 0))
-                sequentially_recall += thresh <= iou_
-            # endregion
-
         pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
-
-    # region
-    max_gt_lengths = max(gt_lengths)
-    min_gt_lengths = min(gt_lengths)
-    interval_size = (max_gt_lengths - min_gt_lengths) / 10
-
-    # intervals = [min_gt_lengths, min_gt_lengths + interval_size, ..., min_gt_lengths + 10 * interval_size]
-    intervals = [min_gt_lengths + i * interval_size for i in range(11)]  # 구간 경계값 리스트
-    # interval_indices = {0: [], 1: [], ..., 9: []}
-    interval_indices = {i: [] for i in range(10)}
-
-    for idx, value in enumerate(gt_lengths):
-        for i in range(10):
-            if intervals[i] <= value < intervals[i+1]:
-                interval_indices[i].append(idx)
-                break
-        # 최대값이 마지막 구간에 포함되도록 처리
-        if value == max_gt_lengths:
-            interval_indices[9].append(idx)
-    
-    for i in range(10):
-        interval_index = interval_indices[i]
-        if len(interval_index) != 0:
-            print('GT length:', min_gt_lengths + i * interval_size, ' ~ ', min_gt_lengths + (i + 1) * interval_size, 's, mIoU:', sum(ious[j] for j in interval_index)/len(interval_index))
-        else:
-            print('GT length:', min_gt_lengths + i * interval_size, ' ~ ', min_gt_lengths + (i + 1) * interval_size, 's, mIoU: No data')
-    # endregion
 
     print('mIoU:', sum(ious) / len(ious))
     for th, r in zip(thresh, recall):
         print(f'R@{th}:', r / len(ious))
 
-    # region
-    print('Single query - mIoU:', sum(single_query_ious) / len(single_query_ious))
-    for th, r in zip(thresh, single_query_recall):
-        print(f'Single query R@{th}:', r / len(single_query_ious))
-    print('Single query data number:', len(single_query_ious))
 
-    print('Simultaneously - mIoU:', sum(simultaneously_ious) / len(simultaneously_ious))
-    for th, r in zip(thresh, simultaneously_recall):
-        print(f'Simultaneously R@{th}:', r / len(simultaneously_ious))
-    print('Simultaneously query data number:', len(simultaneously_ious))
+def eval_with_api(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
+    ious = []
+    thresh = np.array([0.3, 0.5, 0.7])
+    recall = np.array([0, 0, 0])
+    bot = get_chat_model(model_name="gpt-4-turbo", api_key='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')
+    
+    gt_lengths = []
 
-    print('Sequentially - mIoU:', sum(sequentially_ious) / len(sequentially_ious))
-    for th, r in zip(thresh, sequentially_recall):
-        print(f'Sequentially R@{th}:', r / len(sequentially_ious))
-    print('Sequentially query data number:', len(sequentially_ious))
-    # endregion
+    # pbar = tqdm(data.items())
+    pbar = tqdm(itertools.islice(data.items(), 100))
+    start_time = time.time()  # 실행 시간 측정 시작
+
+    for vid, ann in pbar:
+        duration = ann['duration']
+        video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
+
+        for i in range(len(ann['sentences'])):
+            query = ann['sentences'][i]
+            try:
+                ans_json, raw = bot.ask(query)
+                succ = True
+            except Exception as exp:
+                print(exp)
+                if isinstance(exp, KeyboardInterrupt):
+                    exit()
+
+            sub_query_proposals = []
+            if ans_json:
+                relation = ans_json['relationship']
+                for j in range(1, len(ans_json['query_json'])):
+                    query_json = [{'descriptions': q} for q in ans_json['query_json'][j]['descriptions']]
+                    answers = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor))
+                    proposals = []
+                    
+                    for t in range(3):
+                        proposals += [[p['response'][t]['start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answers if len(p['response']) > t]
+                    proposals = np.array(proposals)
+                    sub_query_proposals.append(select_proposal(proposals)[:3])
+            else:
+                relation = 'single-query'
+
+            query_json = [{'descriptions': ann['sentences'][i]}]
+            if 'query_json' in ann['response'][i]:
+                query_json += [{'descriptions': q} for q in ann['response'][i]['query_json'][0]['descriptions']]
+            answers = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor))
+            proposals = []
+            for t in range(3):
+                proposals += [[p['response'][t]['start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answers if len(p['response']) > t]
+            
+            proposals = proposals[:7] + filter_and_integrate(sub_query_proposals, relation)
+            proposals = select_proposal(np.array(proposals))
+            
+            gt = ann['timestamps'][i]
+            iou_ = calc_iou(proposals[:1], gt)[0]
+            ious.append(max(iou_, 0))
+            recall += thresh <= iou_
+
+            gt_lengths.append(gt[1] - gt[0])
+
+        pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
+
+    elapsed_time = time.time() - start_time
+    print(f"Execution Time: {elapsed_time:.2f} seconds")
+    
+    print('mIoU:', sum(ious) / len(ious))
+    for th, r in zip(thresh, recall):
+        print(f'R@{th}:', r / len(ious))
+
 
 def eval(data, feature_path, pad_sec=0.0):
     ious = []
@@ -238,7 +239,10 @@ if __name__=='__main__':
         if args.llm_output and os.path.exists(args.llm_output):
             with open(args.llm_output) as f:
                 data = json.load(f)
-            eval_with_llm(data, dataset['feature_path'], dataset['stride'], dataset['max_stride_factor'], dataset['splits'][args.split]['pad_sec'])
+            if args.api:
+                eval_with_api(data, dataset['feature_path'], dataset['stride'], dataset['max_stride_factor'], dataset['splits'][args.split]['pad_sec'])
+            else:
+                eval_with_llm(data, dataset['feature_path'], dataset['stride'], dataset['max_stride_factor'], dataset['splits'][args.split]['pad_sec'])
         else:
             with open(dataset['splits'][args.split]['annotation_file']) as f:
                 data = json.load(f)

@@ -4,10 +4,13 @@ import numpy as np
 import json
 import torch
 from tqdm import tqdm
+from chat_bots import get_chat_model
 from vlm_localizer_TAG import localize
 from qvhhighlight_eval import eval_submission
 import os
 from llm_prompting import select_proposal, select_proposal_with_score
+import time
+import itertools
 
 def get_args():
     parser = argparse.ArgumentParser(description='Evaluation for training-free video temporal grounding.')
@@ -16,6 +19,7 @@ def get_args():
     parser.add_argument('--use_llm', action='store_true', help='Enable use llm')
     parser.add_argument('--kmeans_gpu', action='store_true', help='Enable use GPU KMeans')
     parser.add_argument('--llm_output', default=None, type=str, help='LLM prompt output. If not specified, use nonly VLM for evaluation.')
+    parser.add_argument('--api', action='store_true', help='Enable use GPT API call')
 
     return parser.parse_args()
 
@@ -39,6 +43,8 @@ def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
     pbar = tqdm(data.items())
+    # pbar = tqdm(itertools.islice(data.items(), 100))
+    # start_time = time.time()  # 실행 시간 측정 시작
 
     for vid, ann in pbar:
         duration = ann['duration']
@@ -55,6 +61,9 @@ def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
             recall += thresh <= iou_
 
         pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
+
+    # elapsed_time = time.time() - start_time
+    # print(f"Execution Time: {elapsed_time:.2f} seconds")
 
     print('mIoU:', sum(ious) / len(ious))
     for th, r in zip(thresh, recall):
@@ -88,6 +97,55 @@ def eval_with_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
             recall += thresh <= iou_
 
         pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
+
+    print('mIoU:', sum(ious) / len(ious))
+    for th, r in zip(thresh, recall):
+        print(f'R@{th}:', r / len(ious))
+
+
+def eval_with_api(data, feature_path, stride, hyperparams, kmeans_gpu):
+    ious = []
+    thresh = np.array([0.3, 0.5, 0.7])
+    recall = np.array([0, 0, 0])
+    bot = get_chat_model(model_name="gpt-4-turbo", api_key='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')
+
+    # pbar = tqdm(data.items())
+    pbar = tqdm(itertools.islice(data.items(), 100))
+    start_time = time.time()  # 실행 시간 측정 시작
+    
+    for vid, ann in pbar:
+        duration = ann['duration']
+        video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
+
+        for i in range(len(ann['sentences'])):
+            gt = ann['timestamps'][i]
+            query_json = [{'descriptions': ann['sentences'][i]}]
+            proposals = localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
+            
+            query = ann['sentences'][i]
+            try:
+                ans_json, raw = bot.ask(query)
+                succ = True
+            except Exception as exp:
+                print(exp)
+                if isinstance(exp, KeyboardInterrupt):
+                    exit()
+
+            if ans_json:
+                for j in range(len(ans_json['query_json'][0]['descriptions'])):
+                    query_json = [{'descriptions': ans_json['query_json'][0]['descriptions'][j]}]
+                    proposals += localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
+
+            proposals = select_proposal(np.array(proposals))
+        
+            iou_ = calc_iou(proposals[:1], gt)[0]
+            ious.append(max(iou_, 0))
+            recall += thresh <= iou_
+
+        pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
+    
+    elapsed_time = time.time() - start_time
+    print(f"Execution Time: {elapsed_time:.2f} seconds")
 
     print('mIoU:', sum(ious) / len(ious))
     for th, r in zip(thresh, recall):
@@ -178,7 +236,10 @@ if __name__=='__main__':
             with open(args.llm_output) as f:
                 data = json.load(f)
             if args.use_llm:
-                eval_with_llm(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'], args.kmeans_gpu)
+                if args.api:
+                    eval_with_api(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'], args.kmeans_gpu)
+                else:
+                    eval_with_llm(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'], args.kmeans_gpu)
             else:
                 eval_without_llm(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'], args.kmeans_gpu)
         else:
