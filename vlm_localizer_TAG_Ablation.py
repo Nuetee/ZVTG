@@ -250,6 +250,7 @@ def scores_masking(scores, masks):
     return masks, masked_indices
 
 
+# region
 def alignment_adjustment(data, scale_gamma, device, lambda_max=2, lambda_min=-2):
     # 작은 상수 추가로 양수 데이터 보장
     epsilon = 1e-6
@@ -289,6 +290,70 @@ def alignment_adjustment(data, scale_gamma, device, lambda_max=2, lambda_min=-2)
     normalized_scores = torch.tensor(transformed_data, device=device).unsqueeze(0)
 
     return normalized_scores, is_scale
+# endregion
+
+# region
+# def gaussian_kernel2(size, sigma=2.0):
+#     # Create 1D Gaussian kernel
+#     coords = torch.arange(size, dtype=torch.float32) - size // 2
+#     kernel = torch.exp(-(coords ** 2) / (2 * sigma ** 2))
+#     return kernel / kernel.sum()
+
+# def temporal_aware_feature_smoothing(kernel_size, features, sigma=1.0):
+#     padding_size = kernel_size // 2
+#     padded_features = torch.cat((features[0].repeat(padding_size, 1), features, features[-1].repeat(padding_size, 1)), dim=0)
+    
+#     # Create Gaussian kernel
+#     kernel = gaussian_kernel2(kernel_size, 4).to(features.device).view(1, 1, -1)
+#     kernel = kernel.repeat(features.shape[1], 1, 1)  # 채널 수에 맞게 커널 복제
+    
+#     padded_features = padded_features.unsqueeze(0).permute(0, 2, 1)  # (1, 257, 104)
+#     padded_features = padded_features.float()
+
+#     temporal_aware_features = F.conv1d(padded_features, kernel, padding=0, groups=features.shape[1])
+#     temporal_aware_features = temporal_aware_features.permute(0, 2, 1)
+#     temporal_aware_features = temporal_aware_features[0]
+
+#     return temporal_aware_features
+# endregion
+
+
+# def alignment_adjustment(data, scale_gamma, device, lambda_max=2, lambda_min=-2):
+#     def yeo_johnson_transformed(x, lmbda):
+#         if lmbda == 0:
+#             return np.sign(x) * np.log1p(np.abs(x))
+#         else:
+#             pos_part = (np.power(x + 1, lmbda) - 1) / lmbda if x >= 0 else 0
+#             neg_part = -(np.power(-x + 1, 2 - lmbda) - 1) / (2 - lmbda) if x < 0 else 0
+#             return pos_part + neg_part
+
+#     # 최적의 lambda를 찾기 위한 로그 가능도 함수 (최소화할 함수)
+#     def neg_log_likelihood(lmbda):
+#         transformed_data = np.array([yeo_johnson_transformed(x, lmbda) for x in data])
+#         var = np.var(transformed_data, ddof=1)
+#         return -np.sum(np.log(np.abs(transformed_data) + 1e-9)) + 0.5 * len(data) * np.log(var)
+
+#     # lambda 범위 내에서 최적화
+#     result = minimize_scalar(neg_log_likelihood, bounds=(lambda_min, lambda_max), method='bounded')
+#     best_lambda = result.x
+
+#     # 최적의 lambda로 변환 데이터 생성
+#     transformed_data = np.array([yeo_johnson_transformed(x, best_lambda) for x in data])
+
+#     original_min, original_max = data.min(), data.max()
+#     transformed_min, transformed_max = transformed_data.min(), transformed_data.max()
+#     transformed_data = (transformed_data - transformed_min) / (transformed_max - transformed_min)  # normalize to [0, 1]
+#     is_scale = False
+#     if original_max - original_min > scale_gamma:
+#         is_scale = True
+#         transformed_data = transformed_data * (original_max - original_min) + original_min  # scale to original min/max
+#     else:
+#         transformed_data = transformed_data * (scale_gamma) + original_min
+
+#     # 변환 결과를 다시 텐서로 변환하고 원래 형태로 복원
+#     normalized_scores = torch.tensor(transformed_data, device=device).unsqueeze(0)
+
+#     return normalized_scores, is_scale
 
 
 def temporal_aware_feature_smoothing(kernel_size, features):
@@ -427,6 +492,7 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
     # Alignment adjustment of similarity scores
     data = scores[:, masks].flatten().cpu().numpy()   # 마스크된 부분만 가져오기    
     normalized_scores, is_scale = alignment_adjustment(data, hyperparams['gamma'], scores.device, lambda_max=2, lambda_min=-2)
+    # normalized_scores = scores[:, masks]
     
     if hyperparams['is_blip2'] or hyperparams['is_blip']:
         video_features = torch.tensor(video_features).cuda()
