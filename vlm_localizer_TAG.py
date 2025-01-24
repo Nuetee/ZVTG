@@ -217,8 +217,8 @@ def extract_static_score(start, end, cum_scores, num_frames, scores):
     if kernel_size != num_frames:
         static_score = inner_sum / kernel_size - outer_sum / (num_frames - kernel_size)
     else:
-        static_score = inner_sum / kernel_size - (scores[0][0] + scores[0][-1] / 2)
-        # static_score = inner_sum / kernel_size
+        # static_score = inner_sum / kernel_size - (scores[0][0] + scores[0][-1] / 2)
+        static_score = inner_sum / kernel_size
     return static_score
 
 
