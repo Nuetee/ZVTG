@@ -50,7 +50,7 @@ def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
     # start_time = time.time()  # 실행 시간 측정 시작
     reldiss = []
     thresh_reldis = np.array([0.05, 0.1, 0.15, 0.2, 0.25])
-    recall_reldis = np.array([0, 0, 0])
+    recall_reldis = np.array([0, 0, 0, 0, 0])
     total_proposal_count = 0
     for vid, ann in pbar:
         duration = ann['duration']
