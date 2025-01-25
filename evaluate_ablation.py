@@ -82,7 +82,7 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
             ious.append(max(best_iou, 0))
             recall += thresh <= best_iou
             reldiss.append(min(best_reldis, float('inf')))
-            recall_reldis += thresh >= best_reldis
+            recall_reldis += thresh_reldis >= best_reldis
 
         pbar.set_postfix({"mIoU": sum(ious) / len(ious), "mIoU": sum(reldiss) / len(reldiss), 'recall': str(recall / len(ious))})
 
