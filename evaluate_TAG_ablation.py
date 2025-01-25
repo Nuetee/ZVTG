@@ -69,9 +69,9 @@ def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
             proposals = np.array(proposals)
             best_iou = 0
             best_reldis = float('inf')
-            for i in range(len(proposals)):
-                iou_ = calc_iou(proposals[i:i+1], gt)[0]
-                reldis_ = relative_distance(proposals[i:i+1], gt)[0]
+            for j in range(len(proposals)):
+                iou_ = calc_iou(proposals[j:j+1], gt)[0]
+                reldis_ = relative_distance(proposals[j:j+1], gt)[0]
                 if iou_ > best_iou:
                     best_iou = iou_
                 if reldis_ < best_reldis:

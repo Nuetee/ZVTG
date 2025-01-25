@@ -59,32 +59,32 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
             query_json = [{'descriptions': ann['sentences'][i]}]
             answers = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor))
             proposals = []
-
+            import pdb;pdb.set_trace()
             for t in range(len(answers[0]['response'])):
                 proposals += [[p['response'][t]['start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answers if len(p['response']) > t]
 
             if proposal_count_flag:
                 total_proposal_count += len(proposals)
                 proposal_count_flag = False
-
+            pdb.set_trace()
             proposals = np.array(proposals)
             gt = ann['timestamps'][i]
             best_iou = 0
             best_reldis = float('inf')
-            for i in range(len(proposals)):
-                iou_ = calc_iou(proposals[i:i+1], gt)[0]
-                reldis_ = relative_distance(proposals[i:i+1], gt)[0]
+            for j in range(len(proposals)):
+                iou_ = calc_iou(proposals[j:j+1], gt)[0]
+                reldis_ = relative_distance(proposals[j:j+1], gt)[0]
                 if iou_ > best_iou:
                     best_iou = iou_
                 if reldis_ < best_reldis:
                     best_reldis = reldis_
-
+            pdb.set_trace()
             ious.append(max(best_iou, 0))
             recall += thresh <= best_iou
             reldiss.append(min(best_reldis, float('inf')))
             recall_reldis += thresh_reldis >= best_reldis
 
-        pbar.set_postfix({"mIoU": sum(ious) / len(ious), "mIoU": sum(reldiss) / len(reldiss), 'recall': str(recall / len(ious))})
+        pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
 
     print('mIoU:', sum(ious) / len(ious))
     for th, r in zip(thresh, recall):
