@@ -46,6 +46,8 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
 
     pbar = tqdm(data.items())
     reldiss = []
+    thresh_reldis = np.array([0.05, 0.1, 0.15, 0.2, 0.25])
+    recall_reldis = np.array([0, 0, 0])
     total_proposal_count = 0
     for vid, ann in pbar:
         duration = ann['duration']
@@ -80,13 +82,18 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
             ious.append(max(best_iou, 0))
             recall += thresh <= best_iou
             reldiss.append(min(best_reldis, float('inf')))
+            recall_reldis += thresh >= best_reldis
 
         pbar.set_postfix({"mIoU": sum(ious) / len(ious), "mIoU": sum(reldiss) / len(reldiss), 'recall': str(recall / len(ious))})
 
     print('mIoU:', sum(ious) / len(ious))
-    print('Rel.dis:', sum(reldiss) / len(reldiss))
     for th, r in zip(thresh, recall):
         print(f'R@{th}:', r / len(ious))
+    
+    print('Rel.dis:', sum(reldiss) / len(reldiss))
+    for th, r in zip(thresh_reldis, recall_reldis):
+        print(f'R@{th}:', r / len(reldiss))
+    
     print(f'Total proposals: {total_proposal_count}, Mean proposals per video: {total_proposal_count / len(data.items())}')
 
 def eval_with_api(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
