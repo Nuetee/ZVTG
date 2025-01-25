@@ -332,43 +332,43 @@ def alignment_adjustment(data, scale_gamma, device, lambda_max=2, lambda_min=-2)
 
 
 # region
-# def gaussian_kernel2(size, sigma=2.0):
-#     # Create 1D Gaussian kernel
-#     coords = torch.arange(size, dtype=torch.float32) - size // 2
-#     kernel = torch.exp(-(coords ** 2) / (2 * sigma ** 2))
-#     return kernel / kernel.sum()
+def gaussian_kernel2(size, sigma=2.0):
+    # Create 1D Gaussian kernel
+    coords = torch.arange(size, dtype=torch.float32) - size // 2
+    kernel = torch.exp(-(coords ** 2) / (2 * sigma ** 2))
+    return kernel / kernel.sum()
 
-# def temporal_aware_feature_smoothing(kernel_size, features, sigma=1.0):
-#     padding_size = kernel_size // 2
-#     padded_features = torch.cat((features[0].repeat(padding_size, 1), features, features[-1].repeat(padding_size, 1)), dim=0)
-    
-#     # Create Gaussian kernel
-#     kernel = gaussian_kernel2(kernel_size, 2).to(features.device).view(1, 1, -1)
-#     kernel = kernel.repeat(features.shape[1], 1, 1)  # 채널 수에 맞게 커널 복제
-    
-#     padded_features = padded_features.unsqueeze(0).permute(0, 2, 1)  # (1, 257, 104)
-#     padded_features = padded_features.float()
-
-#     temporal_aware_features = F.conv1d(padded_features, kernel, padding=0, groups=features.shape[1])
-#     temporal_aware_features = temporal_aware_features.permute(0, 2, 1)
-#     temporal_aware_features = temporal_aware_features[0]
-
-#     return temporal_aware_features
-# endregion
-
-
-def temporal_aware_feature_smoothing(kernel_size, features):
+def temporal_aware_feature_smoothing(kernel_size, features, sigma=1.0):
     padding_size = kernel_size // 2
     padded_features = torch.cat((features[0].repeat(padding_size, 1), features, features[-1].repeat(padding_size, 1)), dim=0)
-    kernel = torch.ones(padded_features.shape[1], 1, kernel_size).cuda() / kernel_size
+    
+    # Create Gaussian kernel
+    kernel = gaussian_kernel2(kernel_size, 2).to(features.device).view(1, 1, -1)
+    kernel = kernel.repeat(features.shape[1], 1, 1)  # 채널 수에 맞게 커널 복제
+    
     padded_features = padded_features.unsqueeze(0).permute(0, 2, 1)  # (1, 257, 104)
     padded_features = padded_features.float()
 
-    temporal_aware_features = F.conv1d(padded_features, kernel, padding=0, groups=padded_features.shape[1])
+    temporal_aware_features = F.conv1d(padded_features, kernel, padding=0, groups=features.shape[1])
     temporal_aware_features = temporal_aware_features.permute(0, 2, 1)
     temporal_aware_features = temporal_aware_features[0]
 
     return temporal_aware_features
+# endregion
+
+
+# def temporal_aware_feature_smoothing(kernel_size, features):
+#     padding_size = kernel_size // 2
+#     padded_features = torch.cat((features[0].repeat(padding_size, 1), features, features[-1].repeat(padding_size, 1)), dim=0)
+#     kernel = torch.ones(padded_features.shape[1], 1, kernel_size).cuda() / kernel_size
+#     padded_features = padded_features.unsqueeze(0).permute(0, 2, 1)  # (1, 257, 104)
+#     padded_features = padded_features.float()
+
+#     temporal_aware_features = F.conv1d(padded_features, kernel, padding=0, groups=padded_features.shape[1])
+#     temporal_aware_features = temporal_aware_features.permute(0, 2, 1)
+#     temporal_aware_features = temporal_aware_features[0]
+
+#     return temporal_aware_features
 
 
 def kmeans_clustering(k, features):
