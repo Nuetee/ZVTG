@@ -33,7 +33,7 @@ def calc_iou(candidates, gt):
 def relative_distance(candidates, gt):
     start, end = candidates[:,0], candidates[:,1]
     s, e = gt[0], gt[1]
-    gt_len = s - e
+    gt_len = e - s
     rel_d1 = abs(start - s) / gt_len
     rel_d2 = abs(end - e) / gt_len
     return (rel_d1 + rel_d2) / 2
