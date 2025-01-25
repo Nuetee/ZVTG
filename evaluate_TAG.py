@@ -31,13 +31,6 @@ def calc_iou(candidates, gt):
     union = np.maximum(end, e) - np.minimum(start, s)
     return inter.clip(min=0) / union
 
-def calc_iou2(candidates, gt):
-    start, end = candidates[:,0], candidates[:,1]
-    s, e = gt[0], gt[1]
-    inter = np.minimum(end, e) - np.maximum(start, s)
-    union = e - s
-    return inter.clip(min=0) / union
-
 def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
     ious = []
     thresh = np.array([0.3, 0.5, 0.7])

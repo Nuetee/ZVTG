@@ -31,6 +31,16 @@ def calc_iou(candidates, gt):
     union = np.maximum(end, e) - np.minimum(start, s)
     return inter.clip(min=0) / union
 
+
+def relative_distance(candidates, gt):
+    start, end = candidates[:,0], candidates[:,1]
+    s, e = gt[0], gt[1]
+    gt_len = s - e
+    rel_d1 = abs(start - s) / gt_len
+    rel_d2 = abs(end - e) / gt_len
+    return (rel_d1 + rel_d2) / 2
+
+
 def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
     ious = []
     thresh = np.array([0.3, 0.5, 0.7])
@@ -38,6 +48,7 @@ def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
     pbar = tqdm(data.items())
     # pbar = tqdm(itertools.islice(data.items(), 100))
     # start_time = time.time()  # 실행 시간 측정 시작
+    reldiss = []
     total_proposal_count = 0
     for vid, ann in pbar:
         duration = ann['duration']
@@ -55,13 +66,18 @@ def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
             
             proposals = np.array(proposals)
             best_iou = 0
+            best_reldis = float('inf')
             for i in range(len(proposals)):
                 iou_ = calc_iou(proposals[i:i+1], gt)[0]
+                reldis_ = relative_distance(proposals[i:i+1], gt)[0]
                 if iou_ > best_iou:
                     best_iou = iou_
+                if reldis_ < best_reldis:
+                    best_reldis = reldis_
 
             ious.append(max(best_iou, 0))
             recall += thresh <= best_iou
+            reldiss.append(min(best_reldis, float('inf')))
 
         pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
 
@@ -69,9 +85,11 @@ def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
     # print(f"Execution Time: {elapsed_time:.2f} seconds")
 
     print('mIoU:', sum(ious) / len(ious))
+    print('Rel.dis:', sum(reldiss) / len(reldiss))
     for th, r in zip(thresh, recall):
         print(f'R@{th}:', r / len(ious))
     print(f'Total proposals: {total_proposal_count}, Mean proposals per video: {total_proposal_count / len(data.items())}')
+
 
 def eval_with_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
     ious = []
