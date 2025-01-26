@@ -110,7 +110,7 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
             proposals = []
             for t in range(len(answers[0]['response'])):
                 proposals += [[p['response'][t]['static_start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answers if len(p['response']) > t]  ### only static
-            import pdb;pdb.set_trace()
+            
             proposals = np.array(proposals)
             proposals = proposals[proposals[:, 2] >= 0]
             proposals, V_iou, V_S, M_iou, M_S, V_ratio, correlation = select_proposal(np.array(proposals), gt)
