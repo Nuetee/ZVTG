@@ -4,10 +4,10 @@ import numpy as np
 from chat_bots import get_chat_model
 import json
 from tqdm import tqdm
-from vlm_localizer import localize
+from vlm_localizer_ablation import localize
 from qvhhighlight_eval import eval_submission
 import os
-from llm_prompting_PC_ab import select_proposal, filter_and_integrate
+from llm_prompting import select_proposal, filter_and_integrate
 import pdb
 import time
 import itertools
@@ -30,122 +30,71 @@ def calc_iou(candidates, gt):
     return inter.clip(min=0) / union
 
 
+def relative_distance(candidates, gt):
+    start, end = candidates[:,0], candidates[:,1]
+    s, e = gt[0], gt[1]
+    gt_len = e - s
+    rel_d1 = abs(start - s) / gt_len
+    rel_d2 = abs(end - e) / gt_len
+    return (rel_d1 + rel_d2) / 2
+
+
 def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     ious = []
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
-    
-    gt_lengths = []
 
     pbar = tqdm(data.items())
+    reldiss = []
+    thresh_reldis = np.array([0.05, 0.1, 0.15, 0.2, 0.25])
+    recall_reldis = np.array([0, 0, 0, 0, 0])
+    total_proposal_count = 0
     for vid, ann in pbar:
         duration = ann['duration']
         video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
 
+        proposal_count_flag = True
         for i in range(len(ann['sentences'])):
-            # sub queries
-            sub_query_proposals = []
-            if 'query_json' in ann['response'][i]:
-                relation = ann['response'][i]['relationship']
-                # j의 range가 1부터 시작하는 이유는 0번째는 sub-query가 아닌 전체 query이기 때문
-                for j in range(1, len(ann['response'][i]['query_json'])):
-                    query_json = [{'descriptions': q} for q in ann['response'][i]['query_json'][j]['descriptions']]
-                    # 하나의 description에 대해 10개 이하의 response(st:end, confidence) / 10개 이하인 이유는 10개를 뽑지만 nms에 의해 억제된 경우 그 이하의 proposal들이 반환되기 때문
-                    answers = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor))
-                    proposals = []
-                    # 각 description에 대한 response에서 상위 3개만 proposal에 저장 -> proposals에는 총 9개의 구간 저장
-                    for t in range(3):
-                        proposals += [[p['response'][t]['start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answers if len(p['response']) > t]
-                    proposals = np.array(proposals)
-                    # 하나의 sub-query에 대해서 3개의 proposal을 선택
-                    sub_query_proposals.append(select_proposal(proposals)[:3])
-            else:
-                relation = 'single-query'
-
             # query, 원문 쿼리 하나 + llm 생성 description 3개 => 4개의 description
             query_json = [{'descriptions': ann['sentences'][i]}]
-            if 'query_json' in ann['response'][i]:
-                query_json += [{'descriptions': q} for q in ann['response'][i]['query_json'][0]['descriptions']]
             answers = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor))
             proposals = []
-            for t in range(3):
-                proposals += [[p['response'][t]['start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answers if len(p['response']) > t]
             
-            # 총 12개의 proposals에서 앞 7개의 proposals 가져옴 -> 각 description 별 1개씩 + 3개
-            proposals = proposals[:7] + filter_and_integrate(sub_query_proposals, relation)
-
-            # select_proposal은 각 proposal에 대해서, ((자기 자신과 다른 proposal과의 겹침 정도)^gamma * 다른 proposal의 score)의 합을 계산하여 정렬됨. 따라서, 점수가 높은 proposal과 많이 겹칠수록 높은 점수를 가짐
-            proposals = select_proposal(np.array(proposals))
-            
-            gt = ann['timestamps'][i]
-            iou_ = calc_iou(proposals[:1], gt)[0]
-            ious.append(max(iou_, 0))
-            recall += thresh <= iou_
-
-            gt_lengths.append(gt[1] - gt[0])
-
-        pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
-
-    print('mIoU:', sum(ious) / len(ious))
-    for th, r in zip(thresh, recall):
-        print(f'R@{th}:', r / len(ious))
-
-def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
-    ious = []
-    thresh = np.array([0.3, 0.5, 0.7])
-    recall = np.array([0, 0, 0])
-    pbar = tqdm(data.items())
-    # pbar = tqdm(itertools.islice(data.items(), 100))
-    # start_time = time.time()  # 실행 시간 측정 시작
-
-    V_iou_list, V_S_list, M_iou_list, M_S_list, V_ratio_list, correlations = [], [], [], [], [], []
-    for vid, ann in pbar:
-        duration = ann['duration']
-        video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
-        
-        for i in range(len(ann['sentences'])):
-            gt = ann['timestamps'][i]
-            query_json = [{'descriptions': ann['sentences'][i]}]
-            answers = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor))
-            proposals = []
             for t in range(len(answers[0]['response'])):
-                proposals += [[p['response'][t]['static_start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answers if len(p['response']) > t]  ### only static
-            import pdb;pdb.set_trace()
+                proposals += [[p['response'][t]['start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answers if len(p['response']) > t]
+
+            if proposal_count_flag:
+                total_proposal_count += len(proposals)
+                proposal_count_flag = False
+            
             proposals = np.array(proposals)
-            proposals = proposals[proposals[:, 2] >= 0]
-            proposals, V_iou, V_S, M_iou, M_S, V_ratio, correlation = select_proposal(np.array(proposals), gt)
-            V_iou_list.append(V_iou)
-            V_S_list.append(V_S)
-            M_iou_list.append(M_iou)
-            M_S_list.append(M_S)
-            V_ratio_list.append(V_ratio)
-            correlations.append(correlation)
-            iou_ = calc_iou(proposals[:1], gt)[0]
-            # print(proposals[:1], gt)
-            ious.append(max(iou_, 0))
-            recall += thresh <= iou_
+            gt = ann['timestamps'][i]
+            best_iou = 0
+            best_reldis = float('inf')
+            for j in range(len(proposals)):
+                iou_ = calc_iou(proposals[j:j+1], gt)[0]
+                reldis_ = relative_distance(proposals[j:j+1], gt)[0]
+                if iou_ > best_iou:
+                    best_iou = iou_
+                if reldis_ < best_reldis:
+                    best_reldis = reldis_
+            
+            ious.append(max(best_iou, 0))
+            recall += thresh <= best_iou
+            reldiss.append(min(best_reldis, float('inf')))
+            recall_reldis += thresh_reldis >= best_reldis
 
         pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
-
-    # elapsed_time = time.time() - start_time
-    # print(f"Execution Time: {elapsed_time:.2f} seconds")
 
     print('mIoU:', sum(ious) / len(ious))
     for th, r in zip(thresh, recall):
         print(f'R@{th}:', r / len(ious))
-    print(f'Mean of M_IoU: {np.mean(np.array(M_iou_list))}')
-    print(f'Mean of V_IoU: {np.mean(np.array(V_iou_list))}')
-    print(f'Mean of M_Score: {np.mean(np.array(M_S_list))}')
-    print(f'Mean of V_Score: {np.mean(np.array(V_S_list))}')
-    print(f'Mean of V_ratio: {np.mean(np.array(V_ratio_list))}')
-    print(f'Mean of Correlations: {np.mean(np.array(correlations))}')
-
-    print(f'Variacne of M_IoU: {np.var(np.array(M_iou_list))}')
-    print(f'Variacne of V_IoU: {np.var(np.array(V_iou_list))}')
-    print(f'Variacne of M_Score: {np.var(np.array(M_S_list))}')
-    print(f'Variacne of V_Score: {np.var(np.array(V_S_list))}')
-    print(f'Variacne of V_ratio: {np.var(np.array(V_ratio_list))}')
-    print(f'Variacne of Correlations: {np.var(np.array(correlations))}')
+    
+    print('Rel.dis:', sum(reldiss) / len(reldiss))
+    for th, r in zip(thresh_reldis, recall_reldis):
+        print(f'R@{th}:', r / len(reldiss))
+    
+    print(f'Total proposals: {total_proposal_count}, Mean proposals per video: {total_proposal_count / len(data.items())}')
 
 def eval_with_api(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     ious = []
