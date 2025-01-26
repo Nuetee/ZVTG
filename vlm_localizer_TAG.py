@@ -34,27 +34,77 @@ import InternVideo
 model_internVideo = InternVideo.load_model("./InternVideo/InternVideo1/Pretrain/Multi-Modalities-Pretraining/InternVideo-MM-L-14.ckpt").cuda()
 #### InternVideo ####
 
-def nms(moments, scores, pre_mom, pre_score, thresh):
-    scores = scores + pre_score * 0.0
-    scores, ranks = scores.sort(descending=True)
-    moments = moments[ranks]
-    pre_mom = pre_mom[ranks]
-    suppressed = ranks.zero_().bool()
-    numel = suppressed.numel()
-    for i in range(numel - 1):
-        if suppressed[i]:
-            continue
-        mask = iou(moments[i + 1:], moments[i]) > thresh
-        suppressed[i + 1:][mask] = True
-    return moments[~suppressed], pre_mom[~suppressed], scores[~suppressed]
-
-
 def iou(candidates, gt):
     start, end = candidates[:, 0], candidates[:, 1]
     s, e = gt[0].float(), gt[1].float()
     inter = end.min(e) - start.max(s)
     union = end.max(e) - start.min(s)
     return inter.clamp(min=0) / union
+
+def nms(video_segments, scores, iou_threshold=0.5):
+    """
+    Apply Non-Maximum Suppression (NMS) to filter video segments based on their scores and overlap.
+
+    Parameters:
+        video_segments (torch.Tensor): Tensor of shape (N, 2) containing the start and end times of video segments.
+        scores (torch.Tensor): Tensor of shape (N,) containing the scores for each segment.
+        iou_threshold (float): IOU threshold for suppression.
+
+    Returns:
+        torch.Tensor: Indices of the segments that are kept after NMS.
+    """
+    if len(video_segments) == 0:
+        return torch.tensor([], dtype=torch.long)
+
+    # Sort segments by their scores in descending order
+    indices = torch.argsort(scores, descending=True)
+    keep = []
+    
+    while len(indices) > 0:
+        # Select the segment with the highest score
+        current = indices[0].item()
+        keep.append(current)
+
+        # Compute IoU with the remaining segments
+        iou_list = []
+        for idx in indices[1:]:
+            iou_list.append(compute_iou(video_segments[current], video_segments[idx]))
+        
+        iou_list = torch.tensor(iou_list)
+
+        # Filter out segments with IoU above the threshold
+        indices = indices[1:][iou_list <= iou_threshold]
+
+    return torch.tensor(keep, dtype=torch.long)
+
+def compute_iou(segment_a, segment_b):
+    """
+    Compute Intersection over Union (IoU) between two segments.
+
+    Parameters:
+        segment_a (torch.Tensor): Start and end times of the first segment.
+        segment_b (torch.Tensor): Start and end times of the second segment.
+
+    Returns:
+        float: IoU value.
+    """
+    start_a, end_a = segment_a
+    start_b, end_b = segment_b
+
+    # Compute the intersection
+    intersection_start = max(start_a.item(), start_b.item())
+    intersection_end = min(end_a.item(), end_b.item())
+    intersection = max(0, intersection_end - intersection_start)
+
+    # Compute the union
+    union = (end_a.item() - start_a.item()) + (end_b.item() - start_b.item()) - intersection
+
+    # Avoid division by zero
+    if union == 0:
+        return 0.0
+
+    return intersection / union
+
 
 def gaussian_kernel(size, sigma=1):
     size = int(size) // 2
@@ -467,7 +517,11 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
     final_proposals_static_score = torch.tensor(final_proposals_static_score)
     _, index_static = final_proposals_static_score.sort(descending=True)
     final_proposals = final_proposals[index_static]
-    final_proposals_scores = final_proposals_static_score[index_static]
+    final_proposals_scores = final_proposals_static_score[index_static] 
+
+    # selected_indices = nms(final_proposals, final_proposals_scores, 0.3)
+    # final_proposals = final_proposals[selected_indices]
+    # final_proposals_scores = final_proposals_scores[selected_indices]
 
     #### dynamic scoring #####
     masked_scores = scores * initial_masks.float()
