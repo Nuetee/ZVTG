@@ -8,7 +8,7 @@ from chat_bots import get_chat_model
 from vlm_localizer_TAG import localize
 from qvhhighlight_eval import eval_submission
 import os
-from llm_prompting import select_proposal, select_proposal_with_score
+from llm_prompting_PC_ab import select_proposal, select_proposal_with_score
 import time
 import itertools
 
