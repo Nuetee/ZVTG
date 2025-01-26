@@ -56,7 +56,10 @@ def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
 
                 for label in unique_labels:
                     cluster_time_indices = frame_indices[kmeans_labels == label]  # 해당 클러스터의 시간 인덱스 추출
-                    variance = torch.var(cluster_time_indices.float())  # 시간 분산 계산
+                    if len(cluster_time_indices) > 1:  # 데이터가 2개 이상 있는 경우에만 분산 계산
+                        variance = torch.var(cluster_time_indices.float())
+                    else:
+                        variance = 0  # 데이터가 없거나 하나인 경우 기본값 할당
                     time_variances.append(variance)
 
                 # 클러스터별 시간 분산 평균 계산
