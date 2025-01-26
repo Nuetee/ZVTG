@@ -10,6 +10,22 @@ def calc_iou(candidates, gt):
     return inter.clip(min=0) / union
 
 
+def select_proposal_with_score(inputs, gamma=0.6):
+    weights = inputs[:, -1].clip(min=0)
+    proposals = inputs[:, :-1]
+    scores = np.zeros_like(weights)
+
+    for j in range(scores.shape[0]):
+        iou = calc_iou(proposals, proposals[j])
+        scores[j] += (iou ** gamma * weights).sum()
+
+    idx = np.argsort(-scores)
+    sorted_inputs = inputs[idx]
+    sorted_scores = scores[idx]
+
+    return sorted_inputs, sorted_scores
+
+
 from scipy.stats import pearsonr
 def select_proposal(inputs, gt, gamma=0.6):
     weights = inputs[:, -1].clip(min=0) ### 기존
