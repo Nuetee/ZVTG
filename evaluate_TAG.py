@@ -8,7 +8,7 @@ from chat_bots import get_chat_model
 from vlm_localizer_TAG import localize
 from qvhhighlight_eval import eval_submission
 import os
-from llm_prompting_PC_ab import select_proposal, select_proposal_with_score
+from llm_prompting import select_proposal, select_proposal_with_score
 import time
 import itertools
 
@@ -31,69 +31,38 @@ def calc_iou(candidates, gt):
     union = np.maximum(end, e) - np.minimum(start, s)
     return inter.clip(min=0) / union
 
-def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
-    ious = []
-    thresh = np.array([0.3, 0.5, 0.7])
-    recall = np.array([0, 0, 0])
-    pbar = tqdm(data.items())
-    # pbar = tqdm(itertools.islice(data.items(), 100))
-    # start_time = time.time()  # 실행 시간 측정 시작
-
-    for vid, ann in pbar:
-        duration = ann['duration']
-        video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
-        
-        for i in range(len(ann['sentences'])):
-            gt = ann['timestamps'][i]
-            query_json = [{'descriptions': ann['sentences'][i]}]
-            proposals = localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
-            proposals = select_proposal(np.array(proposals))
-
-            iou_ = calc_iou(proposals[:1], gt)[0]
-            ious.append(max(iou_, 0))
-            recall += thresh <= iou_
-
-        pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
-
-    # elapsed_time = time.time() - start_time
-    # print(f"Execution Time: {elapsed_time:.2f} seconds")
-
-    print('mIoU:', sum(ious) / len(ious))
-    for th, r in zip(thresh, recall):
-        print(f'R@{th}:', r / len(ious))
-
-
-# def eval_with_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
+# def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
 #     ious = []
 #     thresh = np.array([0.3, 0.5, 0.7])
 #     recall = np.array([0, 0, 0])
 #     pbar = tqdm(data.items())
-    
+#     # pbar = tqdm(itertools.islice(data.items(), 100))
+#     # start_time = time.time()  # 실행 시간 측정 시작
+
 #     for vid, ann in pbar:
 #         duration = ann['duration']
 #         video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
-
+        
 #         for i in range(len(ann['sentences'])):
 #             gt = ann['timestamps'][i]
 #             query_json = [{'descriptions': ann['sentences'][i]}]
 #             proposals = localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
-            
-#             if 'query_json' in ann['response'][i]:
-#                 for j in range(len(ann['response'][i]['query_json'][0]['descriptions'])):
-#                     query_json = [{'descriptions': ann['response'][i]['query_json'][0]['descriptions'][j]}]
-#                     proposals += localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
-
 #             proposals = select_proposal(np.array(proposals))
-        
+
 #             iou_ = calc_iou(proposals[:1], gt)[0]
 #             ious.append(max(iou_, 0))
 #             recall += thresh <= iou_
 
 #         pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
 
+#     # elapsed_time = time.time() - start_time
+#     # print(f"Execution Time: {elapsed_time:.2f} seconds")
+
 #     print('mIoU:', sum(ious) / len(ious))
 #     for th, r in zip(thresh, recall):
 #         print(f'R@{th}:', r / len(ious))
+
+
 def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
     ious = []
     thresh = np.array([0.3, 0.5, 0.7])
@@ -146,6 +115,41 @@ def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
     print(f'Variacne of V_Score: {np.var(np.array(V_S_list))}')
     print(f'Variacne of V_ratio: {np.var(np.array(V_ratio_list))}')
     print(f'Variacne of Correlations: {np.var(np.array(correlations))}')
+
+
+def eval_with_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
+    ious = []
+    thresh = np.array([0.3, 0.5, 0.7])
+    recall = np.array([0, 0, 0])
+    pbar = tqdm(data.items())
+    
+    for vid, ann in pbar:
+        duration = ann['duration']
+        video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
+
+        for i in range(len(ann['sentences'])):
+            gt = ann['timestamps'][i]
+            query_json = [{'descriptions': ann['sentences'][i]}]
+            proposals = localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
+            
+            if 'query_json' in ann['response'][i]:
+                for j in range(len(ann['response'][i]['query_json'][0]['descriptions'])):
+                    query_json = [{'descriptions': ann['response'][i]['query_json'][0]['descriptions'][j]}]
+                    proposals += localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
+
+            proposals = select_proposal(np.array(proposals))
+        
+            iou_ = calc_iou(proposals[:1], gt)[0]
+            ious.append(max(iou_, 0))
+            recall += thresh <= iou_
+
+        pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
+
+    print('mIoU:', sum(ious) / len(ious))
+    for th, r in zip(thresh, recall):
+        print(f'R@{th}:', r / len(ious))
+
+
 
 def eval_with_api(data, feature_path, stride, hyperparams, kmeans_gpu):
     ious = []
