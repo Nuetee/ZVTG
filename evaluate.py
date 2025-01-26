@@ -88,7 +88,7 @@ def calc_iou(candidates, gt):
 
 #     print('mIoU:', sum(ious) / len(ious))
 #     for th, r in zip(thresh, recall):
-        print(f'R@{th}:', r / len(ious))
+#         print(f'R@{th}:', r / len(ious))
 
 def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     ious = []
