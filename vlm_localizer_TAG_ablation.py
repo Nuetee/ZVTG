@@ -420,6 +420,7 @@ def kmeans_clustering_gpu(k, features, n_iter=100, tol=1e-4):
 
     return labels.cpu()
 
+
 def segment_scenes_by_cluster(cluster_labels):
     scene_segments = []
     start_idx = 0
@@ -454,7 +455,112 @@ def get_proposals_with_scores(scene_segments, cum_scores, frame_scores, num_fram
     return proposals, proposals_static_scores
 
 
-def generate_proposal_revise(video_features, sentences, stride, hyperparams, kmeans_gpu):
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Inter-similarity and intra-similarity calculator
+def calculate_similarity(kmeans_labels, features):
+    # Ensure kmeans_labels is a tensor
+    if isinstance(kmeans_labels, torch.Tensor):
+        kmeans_labels = kmeans_labels.cpu().numpy()
+    if isinstance(features, torch.Tensor):
+        features = features.cpu().numpy()
+    
+    clusters = {}
+    
+    # Group features by cluster labels
+    for idx, label in enumerate(kmeans_labels):
+        if label not in clusters:
+            clusters[label] = []
+        clusters[label].append(idx)
+
+    intra_similarities = []
+    inter_similarities = []
+    
+    # Calculate intra-cluster similarity (within each cluster)
+    for cluster_indices in clusters.values():
+        if len(cluster_indices) > 1:
+            cluster_features = features[cluster_indices]
+            similarity_matrix = cosine_similarity(cluster_features)
+
+            # Exclude diagonal (self-similarity)
+            intra_similarity = similarity_matrix[np.triu_indices(len(cluster_indices), k=1)]
+            intra_similarities.append((np.mean(intra_similarity), np.var(intra_similarity)))
+    
+    # Calculate inter-cluster similarity (between clusters)
+    cluster_keys = list(clusters.keys())
+    for i in range(len(cluster_keys)):
+        for j in range(i + 1, len(cluster_keys)):
+            cluster_i_features = features[clusters[cluster_keys[i]]]
+            cluster_j_features = features[clusters[cluster_keys[j]]]
+
+            similarity_matrix = cosine_similarity(cluster_i_features, cluster_j_features)
+            inter_similarities.append((np.mean(similarity_matrix), np.var(similarity_matrix)))
+    
+    # Aggregate mean and variance
+    intra_mean = np.mean([s[0] for s in intra_similarities]) if intra_similarities else 0
+    intra_var = np.mean([s[1] for s in intra_similarities]) if intra_similarities else 0
+    inter_mean = np.mean([s[0] for s in inter_similarities]) if inter_similarities else 0
+    inter_var = np.mean([s[1] for s in inter_similarities]) if inter_similarities else 0
+
+    return {
+        "intra_similarity": {"mean": intra_mean, "variance": intra_var},
+        "inter_similarity": {"mean": inter_mean, "variance": inter_var}
+    }
+
+# Temporal similarity calculator
+def calculate_temporal_similarity(kmeans_labels):
+    # Ensure kmeans_labels is a tensor
+    if isinstance(kmeans_labels, torch.Tensor):
+        kmeans_labels = kmeans_labels.cpu().numpy()
+    
+    clusters = {}
+
+    # Group frame indices by cluster labels
+    for idx, label in enumerate(kmeans_labels):
+        if label not in clusters:
+            clusters[label] = []
+        clusters[label].append(idx)
+
+    intra_similarities = []
+    inter_similarities = []
+
+    # Calculate intra-cluster temporal similarity
+    for cluster_indices in clusters.values():
+        if len(cluster_indices) > 1:
+            temporal_differences = [
+                abs(cluster_indices[i] - cluster_indices[j])
+                for i in range(len(cluster_indices))
+                for j in range(i + 1, len(cluster_indices))
+            ]
+            intra_similarities.append((np.mean(temporal_differences), np.var(temporal_differences)))
+
+    # Calculate inter-cluster temporal similarity
+    cluster_keys = list(clusters.keys())
+    for i in range(len(cluster_keys)):
+        for j in range(i + 1, len(cluster_keys)):
+            cluster_i_indices = clusters[cluster_keys[i]]
+            cluster_j_indices = clusters[cluster_keys[j]]
+
+            temporal_differences = [
+                abs(i_idx - j_idx)
+                for i_idx in cluster_i_indices
+                for j_idx in cluster_j_indices
+            ]
+            inter_similarities.append((np.mean(temporal_differences), np.var(temporal_differences)))
+
+    # Aggregate mean and variance
+    intra_mean = np.mean([s[0] for s in intra_similarities]) if intra_similarities else 0
+    intra_var = np.mean([s[1] for s in intra_similarities]) if intra_similarities else 0
+    inter_mean = np.mean([s[0] for s in inter_similarities]) if inter_similarities else 0
+    inter_var = np.mean([s[1] for s in inter_similarities]) if inter_similarities else 0
+
+    return {
+        "intra_similarity": {"mean": intra_mean, "variance": intra_var},
+        "inter_similarity": {"mean": inter_mean, "variance": inter_var}
+    }
+
+
+def generate_proposal_revise(video_features, sentences, stride, hyperparams, kmeans_gpu, sim_flg):
     num_frames = video_features.shape[0]
     if hyperparams['is_clip']:
         with torch.no_grad():
@@ -514,7 +620,7 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
         kmeans_labels = kmeans_clustering_gpu(kmeans_k, temporal_aware_features)
     else:
         kmeans_labels = kmeans_clustering(kmeans_k, temporal_aware_features)
-    
+
     # Kmeans clusetring 결과에 따라 비디오 장면 Segmentation
     scene_segments = segment_scenes_by_cluster(kmeans_labels)
 
@@ -554,13 +660,21 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
     final_prefix = final_proposals[:, 0].clone().detach()
     #### dynamic scoring #####
 
-    return [final_proposals], [final_proposals_scores], [final_prefix], num_frames, kmeans_labels
+    if sim_flg:
+        feature_similarity = calculate_similarity(kmeans_labels, selected_video_features)
+        temporal_similarity = calculate_temporal_similarity(kmeans_labels)
+        return [final_proposals], [final_proposals_scores], [final_prefix], num_frames, feature_similarity, temporal_similarity
+    else:
+        return [final_proposals], [final_proposals_scores], [final_prefix], num_frames
 
 
-def localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu=False):
+def localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu=False, sim_flg=False):
     answer = []
     for query in query_json:
-        proposals, scores, pre_proposals, num_frames, kmeans_labels = generate_proposal_revise(video_feature, query['descriptions'], stride, hyperparams, kmeans_gpu)
+        if sim_flg:
+            proposals, scores, pre_proposals, num_frames, feature_similarity, temporal_similarity = generate_proposal_revise(video_feature, query['descriptions'], stride, hyperparams, kmeans_gpu, sim_flg)
+        else:
+            proposals, scores, pre_proposals, num_frames = generate_proposal_revise(video_feature, query['descriptions'], stride, hyperparams, kmeans_gpu, sim_flg)
         
         if len(proposals[0]) == 0:
             static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
@@ -589,4 +703,7 @@ def localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gp
     # for t in range(len(answer[0]['response'])):
     #     proposals += [[p['response'][t]['static_start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answer if len(p['response']) > t]  ### only static
     
-    return proposals, kmeans_labels
+    if sim_flg:
+        return proposals, feature_similarity, temporal_similarity
+    else:
+        return proposals

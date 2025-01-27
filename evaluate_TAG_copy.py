@@ -39,8 +39,14 @@ def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
     pbar = tqdm(data.items())
     # pbar = tqdm(itertools.islice(data.items(), 100))
     # start_time = time.time()  # 실행 시간 측정 시작
-
-    mean_time_variance_list = []
+    intra_feauture_similarity_mean_list = []
+    intra_feauture_similarity_var_list = []
+    inter_feauture_similarity_mean_list = []
+    inter_feauture_similarity_var_list = []
+    intra_temporal_similarity_mean_list = []
+    intra_temporal_similarity_var_list = []
+    inter_temporal_similarity_mean_list = []
+    inter_temporal_similarity_var_list = []
     for vid, ann in pbar:
         duration = ann['duration']
         video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
@@ -48,39 +54,45 @@ def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
         for i in range(len(ann['sentences'])):
             gt = ann['timestamps'][i]
             query_json = [{'descriptions': ann['sentences'][i]}]
-            proposals, kmeans_labels = localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
             if kmeans_labels_flag:
-                frame_indices = torch.arange(len(kmeans_labels))
-                unique_labels = kmeans_labels.unique()  # 고유 클러스터 라벨
-                time_variances = []  # 각 클러스터의 시간 분산 저장
+                proposals, feature_similarity, temporal_similarity = localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu, kmeans_labels_flag)
+                intra_feauture_similarity_mean_list.append(feature_similarity["intra_similarity"]["mean"])
+                intra_feauture_similarity_var_list.append(feature_similarity["intra_similarity"]["variance"])
+                inter_feauture_similarity_mean_list.append(feature_similarity["inter_similarity"]["mean"])
+                inter_feauture_similarity_var_list.append(feature_similarity["inter_similarity"]["variance"])
 
-                for label in unique_labels:
-                    cluster_time_indices = frame_indices[kmeans_labels == label]  # 해당 클러스터의 시간 인덱스 추출
-                    if len(cluster_time_indices) > 1:  # 데이터가 2개 이상 있는 경우에만 분산 계산
-                        variance = torch.var(cluster_time_indices.float()) / 10
-                    else:
-                        variance = 0  # 데이터가 없거나 하나인 경우 기본값 할당
-                    time_variances.append(variance)
-
-                # 클러스터별 시간 분산 평균 계산
-                mean_time_variance = torch.mean(torch.tensor(time_variances, dtype=torch.float))
-                mean_time_variance_list.append(mean_time_variance.item())
+                intra_temporal_similarity_mean_list.append(temporal_similarity["intra_similarity"]["mean"])
+                intra_temporal_similarity_var_list.append(temporal_similarity["intra_similarity"]["variance"])
+                inter_temporal_similarity_mean_list.append(temporal_similarity["inter_similarity"]["mean"])
+                inter_temporal_similarity_var_list.append(temporal_similarity["inter_similarity"]["variance"])
                 kmeans_labels_flag = False
-            # proposals = select_proposal(np.array(proposals))
+            else:
+                proposals = localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu, kmeans_labels_flag)
 
-            # iou_ = calc_iou(proposals[:1], gt)[0]
-            # ious.append(max(iou_, 0))
-            # recall += thresh <= iou_
+            proposals = select_proposal(np.array(proposals))
 
-        pbar.set_postfix({"mTime var.": sum(mean_time_variance_list) / len(mean_time_variance_list)})
+            iou_ = calc_iou(proposals[:1], gt)[0]
+            ious.append(max(iou_, 0))
+            recall += thresh <= iou_
 
+        pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
     # elapsed_time = time.time() - start_time
     # print(f"Execution Time: {elapsed_time:.2f} seconds")
 
-    # print('mIoU:', sum(ious) / len(ious))
-    # for th, r in zip(thresh, recall):
-    #     print(f'R@{th}:', r / len(ious))
-    print(sum(mean_time_variance_list)/len(mean_time_variance_list))
+    print('mIoU:', sum(ious) / len(ious))
+    for th, r in zip(thresh, recall):
+        print(f'R@{th}:', r / len(ious))
+
+    print('Feature intra sim Mean: ', sum(intra_feauture_similarity_mean_list) / len(intra_feauture_similarity_mean_list))
+    print('Feature intra sim Var: ', sum(intra_feauture_similarity_var_list) / len(intra_feauture_similarity_var_list))
+    print('Feature inter sim Mean: ', sum(inter_feauture_similarity_mean_list) / len(inter_feauture_similarity_mean_list))
+    print('Feature inter sim Var: ', sum(inter_feauture_similarity_var_list) / len(inter_feauture_similarity_var_list))
+
+    print('Temporal intra sim Mean: ', sum(intra_temporal_similarity_mean_list) / len(intra_temporal_similarity_mean_list))
+    print('Temporal intra sim Var: ', sum(intra_temporal_similarity_var_list) / len(intra_temporal_similarity_var_list))
+    print('Temporal inter sim Mean: ', sum(inter_temporal_similarity_mean_list) / len(inter_temporal_similarity_mean_list))
+    print('Temporal inter sim Var: ', sum(inter_temporal_similarity_var_list) / len(inter_temporal_similarity_var_list))
+              
 
 
 def eval_with_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
