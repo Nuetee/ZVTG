@@ -331,6 +331,35 @@ def alignment_adjustment(data, scale_gamma, device, lambda_max=2, lambda_min=-2)
 # endregion
 
 
+
+# region
+# from sklearn.preprocessing import QuantileTransformer
+# def alignment_adjustment(data, scale_gamma, device, n_quantiles=1000):
+#     # QuantileTransformer 객체 생성 (정규분포로 매핑)
+#     quantile_transformer = QuantileTransformer(n_quantiles=n_quantiles, output_distribution='normal', random_state=0)
+
+#     # 데이터를 2D 형태로 변환 후 Quantile Transformation 적용
+#     data_reshaped = data.reshape(-1, 1)
+#     transformed_data = quantile_transformer.fit_transform(data_reshaped).flatten()
+
+#     original_min, original_max = data.min(), data.max()
+#     transformed_min, transformed_max = transformed_data.min(), transformed_data.max()
+#     transformed_data = (transformed_data - transformed_min) / (transformed_max - transformed_min)  # normalize to [0, 1]
+
+#     is_scale = False
+#     if original_max - original_min > scale_gamma:
+#         is_scale = True
+#         transformed_data = transformed_data * (original_max - original_min) + original_min  # scale to original min/max
+#     else:
+#         transformed_data = transformed_data * (scale_gamma) + original_min
+
+#     # 변환 결과를 다시 텐서로 변환하고 원래 형태로 복원
+#     normalized_scores = torch.tensor(transformed_data, device=device).unsqueeze(0)
+
+#     return normalized_scores, is_scale
+# # endregion
+
+
 # region
 # def gaussian_kernel2(size, sigma=2.0):
 #     # Create 1D Gaussian kernel
@@ -599,6 +628,7 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
     # Alignment adjustment of similarity scores
     data = scores[:, masks].flatten().cpu().numpy()   # 마스크된 부분만 가져오기    
     normalized_scores, is_scale = alignment_adjustment(data, hyperparams['gamma'], scores.device, lambda_max=2, lambda_min=-2)
+    normalized_scores = scores[:, masks]
     
     if hyperparams['is_blip2'] or hyperparams['is_blip']:
         video_features = torch.tensor(video_features).cuda()
