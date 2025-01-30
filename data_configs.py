@@ -209,8 +209,8 @@ DATASETS={
         'hyper_parameters': {
             'stride': 40,
             "gamma": 0.8,
-            "cand_num": 17,
-            "kmeans_k": 5,
+            "cand_num": 13,
+            "kmeans_k": 25,
             "prior": 1,
             "temporal_window_size": 25,
             'is_clip': False,
