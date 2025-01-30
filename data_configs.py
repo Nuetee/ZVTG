@@ -220,7 +220,7 @@ DATASETS={
         },
         'splits': {
             'default': {
-                'annotation_file': 'dataset/qvhighlight/highlight_val_release.jsonl',
+                'annotation_file': 'dataset/qvhighlight/highlight_val_release_aug.jsonl',
                 'pad_sec': 0.0,
             },
         }
