@@ -96,7 +96,6 @@ def eval_with_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
         print(f'R@{th}:', r / len(ious))
 
 
-
 def eval_with_api(data, feature_path, stride, hyperparams, kmeans_gpu):
     ious = []
     thresh = np.array([0.3, 0.5, 0.7])
@@ -213,6 +212,36 @@ def eval_qvhighlight(data, feature_path, stride, hyperparams, kmeans_gpu):
     print(json.dumps(results['brief'], indent=4))
 
 
+def eval_qvhighlight_with_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
+    submission = []
+    for ann in tqdm(data):
+        vid = ann['vid']
+        duration = ann['duration']
+        query_json = [{'descriptions': [ann['query']]}]
+
+        duration = ann['duration']
+        video_feature_path = os.path.join(feature_path, vid+'.npy')
+        video_feature = np.load(video_feature_path)
+
+        proposals = localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
+
+        if 'query_augmented' in ann:
+            for query_augmented in ann['query_augmented']:
+                query_json = [{'descriptions': query_augmented}]
+                proposals += localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
+
+        proposals, proposal_scores = select_proposal_with_score(np.array(proposals))
+        
+        submission.append({
+            "qid": ann['qid'],
+            "query": ann['query'],
+            "vid": vid,
+            "pred_relevant_windows": [[p[0], p[1], proposal_scores[idx]] for idx, p in enumerate(proposals[:10])], 
+        })
+    results = eval_submission(submission, data, verbose=True, match_number=False)
+    print(json.dumps(results['brief'], indent=4))
+
+
 if __name__=='__main__':
     args = get_args()
     assert args.dataset in DATASETS, 'Unsupported dataset. To evaluate other datasets, please add the configuration in data_configs.py.'
@@ -224,7 +253,10 @@ if __name__=='__main__':
         with open(dataset['splits'][args.split]['annotation_file']) as f:
             data = f.readlines()
         data = [json.loads(d) for d in data]
-        eval_qvhighlight(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'], args.kmeans_gpu)
+        if args.use_llm:
+            eval_qvhighlight_with_llm(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'], args.kmeans_gpu)
+        else:
+            eval_qvhighlight(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'], args.kmeans_gpu)
     else:
         if args.llm_output and os.path.exists(args.llm_output):
             with open(args.llm_output) as f:
