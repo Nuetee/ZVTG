@@ -90,63 +90,6 @@ def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     for th, r in zip(thresh, recall):
         print(f'R@{th}:', r / len(ious))
 
-# def eval_with_llm(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
-#     ious = []
-#     thresh = np.array([0.3, 0.5, 0.7])
-#     recall = np.array([0, 0, 0])
-#     pbar = tqdm(data.items())
-#     # pbar = tqdm(itertools.islice(data.items(), 100))
-#     # start_time = time.time()  # 실행 시간 측정 시작
-
-#     V_iou_list, V_S_list, M_iou_list, M_S_list, V_ratio_list, correlations = [], [], [], [], [], []
-#     for vid, ann in pbar:
-#         duration = ann['duration']
-#         video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
-        
-#         for i in range(len(ann['sentences'])):
-#             gt = ann['timestamps'][i]
-#             query_json = [{'descriptions': ann['sentences'][i]}]
-#             answers = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor))
-#             proposals = []
-#             for t in range(len(answers[0]['response'])):
-#                 proposals += [[p['response'][t]['start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answers if len(p['response']) > t]
-            
-#             proposals = np.array(proposals)
-#             proposals = proposals[proposals[:, 2] >= 0]
-#             proposals, V_iou, V_S, M_iou, M_S, V_ratio, correlation = select_proposal(np.array(proposals), gt)
-#             V_iou_list.append(V_iou)
-#             V_S_list.append(V_S)
-#             M_iou_list.append(M_iou)
-#             M_S_list.append(M_S)
-#             V_ratio_list.append(V_ratio)
-#             correlations.append(correlation)
-#             iou_ = calc_iou(proposals[:1], gt)[0]
-#             # print(proposals[:1], gt)
-#             ious.append(max(iou_, 0))
-#             recall += thresh <= iou_
-
-#         pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
-
-#     # elapsed_time = time.time() - start_time
-#     # print(f"Execution Time: {elapsed_time:.2f} seconds")
-
-#     print('mIoU:', sum(ious) / len(ious))
-#     for th, r in zip(thresh, recall):
-#         print(f'R@{th}:', r / len(ious))
-#     print(f'Mean of M_IoU: {np.mean(np.array(M_iou_list))}')
-#     print(f'Mean of V_IoU: {np.mean(np.array(V_iou_list))}')
-#     print(f'Mean of M_Score: {np.mean(np.array(M_S_list))}')
-#     print(f'Mean of V_Score: {np.mean(np.array(V_S_list))}')
-#     print(f'Mean of V_ratio: {np.mean(np.array(V_ratio_list))}')
-#     print(f'Mean of Correlations: {np.mean(np.array(correlations))}')
-
-#     print(f'Variacne of M_IoU: {np.var(np.array(M_iou_list))}')
-#     print(f'Variacne of V_IoU: {np.var(np.array(V_iou_list))}')
-#     print(f'Variacne of M_Score: {np.var(np.array(M_S_list))}')
-#     print(f'Variacne of V_Score: {np.var(np.array(V_S_list))}')
-#     print(f'Variacne of V_ratio: {np.var(np.array(V_ratio_list))}')
-#     print(f'Variacne of Correlations: {np.var(np.array(correlations))}')
-
 def eval_with_api(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
     ious = []
     thresh = np.array([0.3, 0.5, 0.7])

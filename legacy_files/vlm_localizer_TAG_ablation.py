@@ -536,6 +536,58 @@ def calculate_similarity(kmeans_labels, features):
         "inter_similarity": {"mean": inter_mean, "variance": inter_var}
     }
 
+
+# Inter-similarity and intra-similarity calculator
+def calculate_similarity_centriod(kmeans_labels, features):
+    # Ensure kmeans_labels is a tensor
+    if isinstance(kmeans_labels, torch.Tensor):
+        kmeans_labels = kmeans_labels.cpu().numpy()
+    if isinstance(features, torch.Tensor):
+        features = features.cpu().numpy()
+    
+    clusters = {}
+    
+    # Group features by cluster labels
+    for idx, label in enumerate(kmeans_labels):
+        if label not in clusters:
+            clusters[label] = []
+        clusters[label].append(idx)
+
+    intra_similarities = []
+    inter_similarities = []
+    cluster_centroids = {}
+    
+    # Calculate intra-cluster similarity (within each cluster)
+    for label, cluster_indices in clusters.items():
+        if len(cluster_indices) > 1:
+            cluster_features = features[cluster_indices]
+            centroid = np.mean(cluster_features, axis=0, keepdims=True)
+            similarity_matrix = cosine_similarity(cluster_features, centroid)
+            intra_similarity = similarity_matrix.flatten()
+            intra_similarities.append((np.mean(intra_similarity), np.var(intra_similarity)))
+            cluster_centroids[label] = centroid
+    
+    # Calculate inter-cluster similarity (between cluster centroids)
+    cluster_keys = list(cluster_centroids.keys())
+    for i in range(len(cluster_keys)):
+        for j in range(i + 1, len(cluster_keys)):
+            centroid_i = cluster_centroids[cluster_keys[i]]
+            centroid_j = cluster_centroids[cluster_keys[j]]
+            similarity = cosine_similarity(centroid_i, centroid_j).item()
+            inter_similarities.append((similarity, 0))  # Variance is zero since only one similarity value
+    
+    # Aggregate mean and variance
+    intra_mean = np.mean([s[0] for s in intra_similarities]) if intra_similarities else 0
+    intra_var = np.mean([s[1] for s in intra_similarities]) if intra_similarities else 0
+    inter_mean = np.mean([s[0] for s in inter_similarities]) if inter_similarities else 0
+    inter_var = np.mean([s[1] for s in inter_similarities]) if inter_similarities else 0
+
+    return {
+        "intra_similarity": {"mean": intra_mean, "variance": intra_var},
+        "inter_similarity": {"mean": inter_mean, "variance": inter_var}
+    }
+
+
 # Temporal similarity calculator
 def calculate_temporal_similarity(kmeans_labels):
     # Ensure kmeans_labels is a tensor

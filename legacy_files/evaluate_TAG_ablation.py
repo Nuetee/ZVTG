@@ -48,9 +48,7 @@ def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
     pbar = tqdm(data.items())
     # pbar = tqdm(itertools.islice(data.items(), 100))
     # start_time = time.time()  # 실행 시간 측정 시작
-    reldiss = []
-    thresh_reldis = np.array([0.05, 0.1, 0.15, 0.2, 0.25])
-    recall_reldis = np.array([0, 0, 0, 0, 0])
+    
     total_proposal_count = 0
     for vid, ann in pbar:
         duration = ann['duration']
@@ -68,19 +66,14 @@ def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
             
             proposals = np.array(proposals)
             best_iou = 0
-            best_reldis = float('inf')
             for j in range(len(proposals)):
                 iou_ = calc_iou(proposals[j:j+1], gt)[0]
-                reldis_ = relative_distance(proposals[j:j+1], gt)[0]
+                
                 if iou_ > best_iou:
                     best_iou = iou_
-                if reldis_ < best_reldis:
-                    best_reldis = reldis_
-
+                
             ious.append(max(best_iou, 0))
             recall += thresh <= best_iou
-            reldiss.append(min(best_reldis, float('inf')))
-            recall_reldis += thresh_reldis >= best_reldis
 
         pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
 
@@ -91,9 +84,6 @@ def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
     for th, r in zip(thresh, recall):
         print(f'R@{th}:', r / len(ious))
     
-    print('Rel.dis:', sum(reldiss) / len(reldiss))
-    for th, r in zip(thresh_reldis, recall_reldis):
-        print(f'R@{th}:', r / len(reldiss))
     
     print(f'Total proposals: {total_proposal_count}, Mean proposals per video: {total_proposal_count / len(data.items())}')
 

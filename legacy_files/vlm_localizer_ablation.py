@@ -140,22 +140,21 @@ def generate_proposal(video_features, sentences, stride, max_stride, nms_thresh=
                 flattened_prescore[idx] = torch.concat([flattened_prescore[idx], dynamic_scores_tmp[idx][mask]], dim=0)
 
     # NMS
-    # filtered_proposals = []
-    # filtered_scores = []
-    # filtered_prefix = []
-    # for idx in range(len(flattened_proposals)):
-    #     if len(flattened_proposals[idx]) > 0:
-    #         nms_proposals, nms_prefix, nms_scores = nms(flattened_proposals[idx], flattened_scores[idx], flattened_prefix[idx], flattened_scores[idx], nms_thresh)
-    #         filtered_proposals.append(nms_proposals)
-    #         filtered_scores.append(nms_scores)
-    #         filtered_prefix.append(nms_prefix)
-    #     else:
-    #         filtered_proposals.append([])
-    #         filtered_scores.append([])
-    #         filtered_prefix.append([])
-    
+    filtered_proposals = []
+    filtered_scores = []
+    filtered_prefix = []
+    for idx in range(len(flattened_proposals)):
+        if len(flattened_proposals[idx]) > 0:
+            nms_proposals, nms_prefix, nms_scores = nms(flattened_proposals[idx], flattened_scores[idx], flattened_prefix[idx], flattened_scores[idx], nms_thresh)
+            filtered_proposals.append(nms_proposals)
+            filtered_scores.append(nms_scores)
+            filtered_prefix.append(nms_prefix)
+        else:
+            filtered_proposals.append([])
+            filtered_scores.append([])
+            filtered_prefix.append([])
 
-    return flattened_proposals, flattened_scores, flattened_prefix, scores
+    return filtered_proposals, filtered_scores, filtered_prefix, scores
 
 
 def localize(video_feature, duration, query_json, stride, max_stride):
@@ -168,9 +167,9 @@ def localize(video_feature, duration, query_json, stride, max_stride):
             dynamic_pred = np.array([0.0, 0.0, 0.0])
             scores = np.array([1.0, 1.0, 1.0])
         else:
-            static_pred = proposals[0] * duration
-            dynamic_pred = pre_proposals[0] * duration
-            scores = scores[0]
+            static_pred = proposals[0][:10] * duration
+            dynamic_pred = pre_proposals[0][:10] * duration
+            scores = scores[0][:10]
             scores = scores / scores.max()
         query['response'] = []
         for i in range(len(static_pred)):
