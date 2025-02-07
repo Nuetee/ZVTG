@@ -190,23 +190,23 @@ def alignment_adjustment(data, scale_gamma, device, lambda_max=2, lambda_min=-2)
     return normalized_scores, is_scale
 
 
-import torch.nn.functional as F
-def temporal_aware_feature_smoothing(kernel_size, video_features):
-    F_dim, Q, C = video_features.shape  # Frame, Query, Channel 크기
+# import torch.nn.functional as F
+# def temporal_aware_feature_smoothing(kernel_size, video_features):
+#     F_dim, Q, C = video_features.shape  # Frame, Query, Channel 크기
 
-    # padding size 계산
-    pad_size = kernel_size // 2
+#     # padding size 계산
+#     pad_size = kernel_size // 2
 
-    video_features = video_features.permute(1, 2, 0)  # (Q, C, F)
+#     video_features = video_features.permute(1, 2, 0)  # (Q, C, F)
 
-    # Frame 차원(F)에 대해 padding 적용
-    padded_features = F.pad(video_features, (pad_size, pad_size), mode='replicate')  # (Q, C, F + 2*pad_size)
+#     # Frame 차원(F)에 대해 padding 적용
+#     padded_features = F.pad(video_features, (pad_size, pad_size), mode='replicate')  # (Q, C, F + 2*pad_size)
 
-    # Mean pooling을 Frame 차원(F)에서 수행
-    pooled_features = F.avg_pool1d(padded_features, kernel_size, stride=1)  # (Q, C, F)
+#     # Mean pooling을 Frame 차원(F)에서 수행
+#     pooled_features = F.avg_pool1d(padded_features, kernel_size, stride=1)  # (Q, C, F)
 
-    # 원래 차원 (F, Q, C)으로 변환
-    return pooled_features.permute(2, 0, 1)  # (F, Q, C)
+#     # 원래 차원 (F, Q, C)으로 변환
+#     return pooled_features.permute(2, 0, 1)  # (F, Q, C)
 
 
 def kmeans_clustering(k, features):
@@ -275,11 +275,39 @@ def segment_scenes_by_cluster(cluster_labels):
 
     return scene_segments
 
+def get_proposals_with_scores2(scene_segments, num_frames, prior):
+    proposals = []
+    for i in range(len(scene_segments)):
+        for j in range(i + 1, len(scene_segments)):
+            start = scene_segments[i][0]
+            last = scene_segments[j][0]
+            if (last - start) > num_frames * prior:
+                continue
+            
+            proposals.append([start, last])
+
+    return proposals
+
+
+def temporal_aware_feature_smoothing(kernel_size, features):
+    padding_size = kernel_size // 2
+    padded_features = torch.cat((features[0].repeat(padding_size, 1), features, features[-1].repeat(padding_size, 1)), dim=0)
+    kernel = torch.ones(padded_features.shape[1], 1, kernel_size).cuda() / kernel_size
+    padded_features = padded_features.unsqueeze(0).permute(0, 2, 1)  # (1, 257, 104)
+    padded_features = padded_features.float()
+
+    temporal_aware_features = F.conv1d(padded_features, kernel, padding=0, groups=padded_features.shape[1])
+    temporal_aware_features = temporal_aware_features.permute(0, 2, 1)
+    temporal_aware_features = temporal_aware_features[0]
+
+    return temporal_aware_features
+
 
 def generate_segments(video_features, hyperparams, kmeans_gpu):
     num_frames = video_features.shape[0]
 
     video_features = torch.tensor(video_features).cuda()
+    video_features = video_features.mean(dim=1) 
         
     # Temporal-aware vector smoothing
     temporal_aware_features = temporal_aware_feature_smoothing(hyperparams['temporal_window_size'], video_features)
@@ -293,7 +321,9 @@ def generate_segments(video_features, hyperparams, kmeans_gpu):
     
     # Kmeans clusetring 결과에 따라 비디오 장면 Segmentation
     scene_segments = segment_scenes_by_cluster(kmeans_labels)
-    return scene_segments, num_frames
+    proposals = get_proposals_with_scores2(scene_segments, num_frames, hyperparams['prior'])
+
+    return scene_segments, proposals, num_frames
 
 
 def get_proposals_with_scores(scene_segments, cum_scores, cum_norm_scores, num_frames, prior):

@@ -22,10 +22,14 @@ def get_args():
 
 def generate_scenes(data, feature_path, output_json_path, hyperparams, kmeans_gpu):
     pbar = tqdm(data.items())
+    start_index = 0
     for vid, ann in pbar:
         video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
-        scene_segments, num_frames = generate_segments(video_feature, hyperparams, kmeans_gpu)
+        scene_segments, proposals, num_frames = generate_segments(video_feature, hyperparams, kmeans_gpu)
+        ann['start_index'] = start_index
         ann['scene_segments'] = scene_segments
+        ann['proposals'] = proposals
+        start_index = start_index + scene_segments[-1][0]
 
     with open(output_json_path, 'w') as f:
         json.dump(data, f, indent=4)
