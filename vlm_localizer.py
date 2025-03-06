@@ -157,10 +157,10 @@ def generate_proposal(video_features, sentences, stride, max_stride, nms_thresh=
     return filtered_proposals, filtered_scores, filtered_prefix, scores
 
 
-def localize(video_feature, duration, query_json, stride, max_stride):
+def localize(video_feature, duration, query_json, stride, max_stride, nms_thresh):
     answer = []
     for query in query_json:
-        proposals, scores, pre_proposals, ori_scores = generate_proposal(video_feature, query['descriptions'], stride, max_stride)
+        proposals, scores, pre_proposals, ori_scores = generate_proposal(video_feature, query['descriptions'], stride, max_stride, nms_thresh=nms_thresh)
 
         if len(proposals[0]) == 0:
             static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])

@@ -5,7 +5,7 @@ import json
 import torch
 from tqdm import tqdm
 from chat_bots import get_chat_model
-from vlm_localizer_TAG_legacy import localize
+from vlm_localizer_TAG_adaptive_k import localize
 from qvhhighlight_eval import eval_submission
 import os
 from llm_prompting import select_proposal, select_proposal_with_score
@@ -18,7 +18,7 @@ def get_args():
     parser.add_argument('--split', default='default', type=str, help='Specify the split. See supported splits in data_configs.py.')
     parser.add_argument('--use_llm', action='store_true', help='Enable use llm')
     parser.add_argument('--kmeans_gpu', action='store_true', help='Enable use GPU KMeans')
-    parser.add_argument('--duration', action='store_true', help='Video duration analysis')
+    parser.add_argument('--duration', action='store_true', help='Enable use GPU KMeans')
     parser.add_argument('--llm_output', default=None, type=str, help='LLM prompt output. If not specified, use nonly VLM for evaluation.')
     parser.add_argument('--api', action='store_true', help='Enable use GPT API call')
 
@@ -36,89 +36,33 @@ def eval_without_llm(data, feature_path, stride, hyperparams, kmeans_gpu):
     ious = []
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
-    pbar = tqdm(data.items())
-    # pbar = tqdm(itertools.islice(data.items(), 100))
-    # start_time = time.time()  # 실행 시간 측정 시작
 
-    for vid, ann in pbar:
-        duration = ann['duration']
-        video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
-        
-        for i in range(len(ann['sentences'])):
-            gt = ann['timestamps'][i]
-            query_json = [{'descriptions': ann['sentences'][i]}]
-            proposals = localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
-            proposals = select_proposal(np.array(proposals))
-
-            iou_ = calc_iou(proposals[:1], gt)[0]
-            ious.append(max(iou_, 0))
-            recall += thresh <= iou_
-
-        pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
-
-    # elapsed_time = time.time() - start_time
-    # print(f"Execution Time: {elapsed_time:.2f} seconds")
-
-    print('mIoU:', sum(ious) / len(ious))
-    for th, r in zip(thresh, recall):
-        print(f'R@{th}:', r / len(ious))
-
-
-def eval_without_llm_duration(data, feature_path, stride, hyperparams, kmeans_gpu):
-    ious = []
-    thresh = np.array([0.3, 0.5, 0.7])
-    recall = np.array([0, 0, 0])
-    ious_dict = {}
-    recall_dict = {}
-
-    thresh = np.array([0.3, 0.5, 0.7])
-    
-    # Duration 범주 생성 (linspace 10개 구간)
     all_durations = [ann['duration'] for ann in data.values()]
-    start, end = min(all_durations), max(all_durations)
-    bins = np.linspace(start, end, 21)  # 10개의 구간을 만들기 위해 11개의 경계값 생성
+    # start, end = min(all_durations), max(all_durations)
+    start, end = min(all_durations), 262.4
+    max_k = 20
+    min_k = 6
 
     pbar = tqdm(data.items())
 
     for vid, ann in pbar:
         duration = ann['duration']
+        duration_ratio = duration / (end - start)
+        kmeans_k = int(duration_ratio * (max_k - min_k) + min_k)
         video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
         
-        # Duration이 속하는 범주 찾기
-        category = np.digitize(duration, bins) - 1  # np.digitize는 1부터 시작하므로 0-index로 맞춤
-        category = min(category, len(bins) - 2)
-
-        if category not in ious_dict:
-            ious_dict[category] = []
-            recall_dict[category] = np.array([0, 0, 0])
-
         for i in range(len(ann['sentences'])):
             gt = ann['timestamps'][i]
             query_json = [{'descriptions': ann['sentences'][i]}]
-            proposals = localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
+            proposals = localize(video_feature, duration, query_json, stride, kmeans_k, hyperparams, kmeans_gpu)
             proposals = select_proposal(np.array(proposals))
 
             iou_ = calc_iou(proposals[:1], gt)[0]
             ious.append(max(iou_, 0))
             recall += thresh <= iou_
-            ious_dict[category].append(max(iou_, 0))
-            recall_dict[category] += thresh <= iou_
-        
+
         pbar.set_postfix({"mIoU": sum(ious) / len(ious), 'recall': str(recall / len(ious))})
 
-    # 전체 결과 출력
-    print("\n===== Final Results by Duration Category =====")
-    for category in sorted(ious_dict.keys()):
-        category_range = f"{bins[category]:.2f} - {bins[category+1]:.2f}"
-        mIoU = sum(ious_dict[category]) / len(ious_dict[category])
-        recall_values = recall_dict[category] / len(ious_dict[category])
-
-        print(f"\n[Duration Range: {category_range}]")
-        print(f"  mIoU: {mIoU:.4f}")
-        for th, r in zip(thresh, recall_values):
-            print(f"  R@{th}: {r:.4f}")
-
-    print("\n===== Overall performance =====")
     print('mIoU:', sum(ious) / len(ious))
     for th, r in zip(thresh, recall):
         print(f'R@{th}:', r / len(ious))
@@ -328,10 +272,7 @@ if __name__=='__main__':
                 else:
                     eval_with_llm(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'], args.kmeans_gpu)
             else:
-                if args.duration:
-                    eval_without_llm_duration(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'], args.kmeans_gpu)
-                else:
-                    eval_without_llm(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'], args.kmeans_gpu)
+                eval_without_llm(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'], args.kmeans_gpu)
         else:
             with open(dataset['splits'][args.split]['annotation_file']) as f:
                 data = json.load(f)

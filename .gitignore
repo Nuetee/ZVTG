@@ -16,3 +16,5 @@ clip_feature/
 *plot*/
 QVHighlights*/
 others/
+/hf_cache
+/t2v_metrics*
