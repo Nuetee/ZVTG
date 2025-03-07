@@ -91,11 +91,13 @@ def eval_TAG(data, feature_path, stride, hyperparams, kmeans_gpu):
     thresh = np.array([0.3, 0.5, 0.7])
     recall = np.array([0, 0, 0])
 
-    proposal_len = []
+    proposal_len_var_list = []
     max_iou_list = []
-    proposal_iou_mean_list = []
-    gt_nearest_proposal_ratio_list = []
-    gt_nearest_proposal_iou_list = []
+    # proposal_iou_mean_list = []
+    # gt_nearest_proposal_ratio_list = []
+    # gt_nearest_proposal_iou_list = []
+    iou_list = []
+    score_var_list = []
 
     pbar = tqdm(data.items())
     for vid, ann in pbar:
@@ -104,35 +106,43 @@ def eval_TAG(data, feature_path, stride, hyperparams, kmeans_gpu):
         
         for i in range(len(ann['sentences'])):
             gt = ann['timestamps'][i]
-            gt_len = gt[1] - gt[0]
-            near_start = max(0, gt[0] - gt_len * args.ratio)
-            near_end = min(duration, gt[1] + gt_len * args.ratio)
+            # gt_len = gt[1] - gt[0]
+            # near_start = max(0, gt[0] - gt_len * args.ratio)
+            # near_end = min(duration, gt[1] + gt_len * args.ratio)
 
 
             query_json = [{'descriptions': ann['sentences'][i]}]
             proposals = localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
             # proposals = proposals[:6]
 
-            near_proposals = [p for p in proposals if p[0] >= near_start and p[1] <= near_end]
-            gt_nearest_proposal_ratio_list.append(len(near_proposals) / len(proposals))
+            # near_proposals = [p for p in proposals if p[0] >= near_start and p[1] <= near_end]
+            # gt_nearest_proposal_ratio_list.append(len(near_proposals) / len(proposals))
             
-            if len(near_proposals) > 0:
-                near_iou_values = compute_ious(np.array(near_proposals), np.array(gt))
-                gt_nearest_proposal_iou_list.append(np.mean(near_iou_values))
+            # if len(near_proposals) > 0:
+            #     near_iou_values = compute_ious(np.array(near_proposals), np.array(gt))
+            #     gt_nearest_proposal_iou_list.append(np.mean(near_iou_values))
 
-            proposals = select_proposal(np.array(proposals))
-            proposal_len.append(len(proposals))
+            # proposals = select_proposal(np.array(proposals))
+            # proposal_len.append(len(proposals))
             
-            iou_matrix = compute_proposal_iou_matrix(proposals)
-            np.fill_diagonal(iou_matrix, 0)
-            
+            # iou_matrix = compute_proposal_iou_matrix(proposals)
+            # np.fill_diagonal(iou_matrix, 0)
+            proposals = np.array(proposals)
+            proposal_len = proposals[:, 1] - proposals[:, 0]
+
+            proposal_len_var = np.var(proposal_len)
+            proposal_len_var_list.append(proposal_len_var)
+            scores = proposals[:, 2]
             iou_values = compute_ious(proposals, np.array(gt))
+            score_var = np.var(scores)
+            score_var_list.append(score_var)
+            iou_list.extend(iou_values.tolist())
             max_iou_list.append(np.max(iou_values))
 
             # IoU 합과 평균 계산 (자기 자신 제외)
-            num_elements = (iou_matrix.shape[0] * iou_matrix.shape[1]) - len(proposals)
-            iou_mean = np.sum(iou_matrix) / num_elements if num_elements > 0 else 0  # 평균 계산
-            proposal_iou_mean_list.append(iou_mean)
+            # num_elements = (iou_matrix.shape[0] * iou_matrix.shape[1]) - len(proposals)
+            # iou_mean = np.sum(iou_matrix) / num_elements if num_elements > 0 else 0  # 평균 계산
+            # proposal_iou_mean_list.append(iou_mean)
 
             iou_ = calc_iou(proposals[:1], gt)[0]
             ious.append(max(iou_, 0))
@@ -145,15 +155,45 @@ def eval_TAG(data, feature_path, stride, hyperparams, kmeans_gpu):
         print(f'R@{th}:', r / len(ious))
 
     print('Mean Max IoU: ', sum(max_iou_list) / len(max_iou_list))
-    print('Mean proposal IoU mean: ', sum(proposal_iou_mean_list) / len(proposal_iou_mean_list))
-    print('Mean # of near proposals with gt: ', sum(gt_nearest_proposal_ratio_list) / len(gt_nearest_proposal_ratio_list))
-    print('mIoU of near proposals: ', sum(gt_nearest_proposal_iou_list) / len(gt_nearest_proposal_iou_list))
+    data = {
+        "IoU list": iou_list,
+        "Score variance": score_var_list,
+        "Proposal length variance": proposal_len_var_list
+    }
 
-    print(sum(proposal_len) / len(proposal_len))
-    print(min(proposal_len))
-    print(max(proposal_len))
-    print(sum(1 for x in proposal_len if x >= 5))
-    print(len(proposal_len))
+    # JSON 파일로 저장
+    with open(f"TAG_{args.dataset}_analysis.json", "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+    # import matplotlib.pyplot as plt
+
+    # def plot_iou_histogram(iou_values):
+    #     """
+    #     IoU 값들의 분포를 0.1 단위로 0~1 구간에서 히스토그램으로 그리는 함수.
+    #     :param iou_values: IoU 값들의 리스트
+    #     """
+    #     # bins = np.arange(0, 1.1, 0.1)  # 0.1 단위로 0~1 범위의 bin 생성
+    #     max_value = max(iou_values) if iou_values else 1  # 리스트가 비어있지 않을 경우 최대값 설정
+    #     bins = np.linspace(0, max_value, 11)  # 0부터 최대값까지 10개 구간으로 나누기
+    #     plt.figure(figsize=(8, 6))
+    #     plt.hist(iou_values, bins=bins, color='blue', alpha=0.7, edgecolor='black')
+    #     plt.xlabel('IoU')
+    #     plt.ylabel('Frequency')
+    #     plt.title('Distribution of IoU Values')
+    #     plt.xticks(bins)  # x축을 0.1 단위로 설정
+    #     plt.grid(True, linestyle='--', alpha=0.5)
+    #     plt.tight_layout()
+    #     plt.savefig(f"{args.dataset} TAG")
+    #     plt.close()
+    # plot_iou_histogram(proposal_len_var_list)
+    # print('Mean proposal IoU mean: ', sum(proposal_iou_mean_list) / len(proposal_iou_mean_list))
+    # print('Mean # of near proposals with gt: ', sum(gt_nearest_proposal_ratio_list) / len(gt_nearest_proposal_ratio_list))
+    # print('mIoU of near proposals: ', sum(gt_nearest_proposal_iou_list) / len(gt_nearest_proposal_iou_list))
+
+    # print(sum(proposal_len) / len(proposal_len))
+    # print(min(proposal_len))
+    # print(max(proposal_len))
+    # print(sum(1 for x in proposal_len if x >= 5))
+    # print(len(proposal_len))
 
 
 if __name__=='__main__':
