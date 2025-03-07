@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import json
 from tqdm import tqdm
-from vlm_localizer_TAG import localize
+from vlm_localizer_TAG_mean_score import localize
 from qvhhighlight_eval import eval_submission
 import os
 from llm_prompting import select_proposal, filter_and_integrate
@@ -41,8 +41,9 @@ def eval_TAG(data, feature_path, stride, hyperparams, kmeans_gpu):
         for i in range(len(ann['sentences'])):
             gt = ann['timestamps'][i]
             query_json = [{'descriptions': ann['sentences'][i]}]
+
             proposals = localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
-            import pdb;pdb.set_trace()
+ 
             proposals = np.array(proposals)
 
             iou_ = calc_iou(proposals[:1], gt)[0]
