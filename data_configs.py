@@ -7,7 +7,7 @@ DATASETS={
             'stride': 20,
             "gamma": 0.2,
             "cand_num": 12,
-            "kmeans_k": 4,
+            "kmeans_k": 9,
             "prior": 0.5,
             "temporal_window_size": 21,
             'is_clip': False,
