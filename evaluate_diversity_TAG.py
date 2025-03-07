@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import json
 from tqdm import tqdm
-from vlm_localizer_TAG import localize
+from vlm_localizer_TAG_legacy import localize
 from qvhhighlight_eval import eval_submission
 import os
 from llm_prompting import select_proposal, filter_and_integrate
@@ -15,6 +15,7 @@ def get_args():
     parser.add_argument('--split', default='default', type=str, help='Specify the split. See supported splits in data_configs.py.')
     parser.add_argument('--llm_output', default=None, type=str, help='LLM prompt output. If not specified, use only VLM for evaluation.')
     parser.add_argument('--kmeans_gpu', action='store_true', help='Enable use GPU KMeans')
+    parser.add_argument('--ratio', default=1, type=float)
 
     return parser.parse_args()
 
@@ -104,13 +105,13 @@ def eval_TAG(data, feature_path, stride, hyperparams, kmeans_gpu):
         for i in range(len(ann['sentences'])):
             gt = ann['timestamps'][i]
             gt_len = gt[1] - gt[0]
-            near_start = max(0, gt[0] - gt_len)
-            near_end = min(duration, gt[1] + gt_len)
+            near_start = max(0, gt[0] - gt_len * args.ratio)
+            near_end = min(duration, gt[1] + gt_len * args.ratio)
 
 
             query_json = [{'descriptions': ann['sentences'][i]}]
             proposals = localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
-            proposals = proposals[:6]
+            # proposals = proposals[:6]
 
             near_proposals = [p for p in proposals if p[0] >= near_start and p[1] <= near_end]
             gt_nearest_proposal_ratio_list.append(len(near_proposals) / len(proposals))

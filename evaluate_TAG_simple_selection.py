@@ -42,7 +42,7 @@ def eval_TAG(data, feature_path, stride, hyperparams, kmeans_gpu):
             gt = ann['timestamps'][i]
             query_json = [{'descriptions': ann['sentences'][i]}]
             proposals = localize(video_feature, duration, query_json, stride, hyperparams, kmeans_gpu)
-            
+            import pdb;pdb.set_trace()
             proposals = np.array(proposals)
 
             iou_ = calc_iou(proposals[:1], gt)[0]

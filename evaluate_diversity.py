@@ -15,6 +15,7 @@ def get_args():
     parser.add_argument('--split', default='default', type=str, help='Specify the split. See supported splits in data_configs.py.')
     parser.add_argument('--llm_output', default=None, type=str, help='LLM prompt output. If not specified, use only VLM for evaluation.')
     parser.add_argument('--nms_thresh', default=0.3, type=float)
+    parser.add_argument('--ratio', default=1, type=float)
     return parser.parse_args()
 
 
@@ -103,8 +104,8 @@ def eval_sliding(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
         for i in range(len(ann['sentences'])):
             gt = ann['timestamps'][i]
             gt_len = gt[1] - gt[0]
-            near_start = max(0, gt[0] - gt_len)
-            near_end = min(duration, gt[1] + gt_len)
+            near_start = max(0, gt[0] - gt_len * args.ratio)
+            near_end = min(duration, gt[1] + gt_len * args.ratio)
 
             # sub queries
             query_json = [{'descriptions': ann['sentences'][i]}]

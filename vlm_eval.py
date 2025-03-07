@@ -169,3 +169,10 @@ if __name__=='__main__':
     plt.savefig(f"Selection Frequency_x{args.unit}_{args.dataset}{' static' if args.static else ''}{' fixed length' if args.fixed_length else ''}{' ' + str(args.ratio)}.png", dpi=300, bbox_inches='tight')
 
     plt.close()  # 메모리 해제
+
+    for i in range(0, len(percentages) // 2):
+        if i == 0:
+            percentages_sum = sum(percentages)
+        else:
+            percentages_sum = sum(percentages[i:-i])
+        print(f"{keys[i]}~{keys[-(i+1)]}: {percentages_sum}")

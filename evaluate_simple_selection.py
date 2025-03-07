@@ -39,10 +39,9 @@ def eval_sliding(data, feature_path, stride, max_stride_factor, pad_sec=0.0):
         for i in range(len(ann['sentences'])):
             # sub queries
             query_json = [{'descriptions': ann['sentences'][i]}]
-            import pdb;pdb.set_trace()
             answers = localize(video_feature, duration, query_json, stride, int(video_feature.shape[0] * max_stride_factor), nms_thresh=args.nms_thresh)
             proposals = []
-            for t in range(len(answers[0]['response'])):
+            for t in range(3):
                 proposals += [[p['response'][t]['start'], p['response'][t]['end'], p['response'][t]['confidence']] for p in answers if len(p['response']) > t]
 
             proposals = np.array(proposals)
