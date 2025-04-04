@@ -118,9 +118,10 @@ def generate_proposal(video_features, sentences, stride, max_stride, nms_thresh=
         kernel = torch.ones((1, 1, kernel_size)).to('cuda')
         inner_sum = F.conv1d(scores.view(-1, 1, scores.size(-1)), kernel).view(scores.size(0), -1)
         inner_num = F.conv1d(masks.view(-1, 1, masks.size(-1)), kernel).view(masks.size(0), -1)
-        outer_sum = (scores * masks).sum(dim=-1, keepdim=True) - inner_sum
-        outer_num = masks.sum(dim=-1, keepdim=True) - inner_num
-        static_scores = inner_sum / kernel_size - outer_sum / outer_num
+        # outer_sum = (scores * masks).sum(dim=-1, keepdim=True) - inner_sum
+        # outer_num = masks.sum(dim=-1, keepdim=True) - inner_num
+        # static_scores = inner_sum / kernel_size - outer_sum / outer_num
+        static_scores = inner_sum / kernel_size
         proposals = torch.arange(0, static_scores.size(-1)).to('cuda')
         proposals = torch.stack([proposals, proposals + kernel_size], dim=-1) / scores.size(-1)
 
@@ -157,10 +158,10 @@ def generate_proposal(video_features, sentences, stride, max_stride, nms_thresh=
     return filtered_proposals, filtered_scores, filtered_prefix, scores
 
 
-def localize(video_feature, duration, query_json, stride, max_stride):
+def localize(video_feature, duration, query_json, stride, max_stride, nms_thresh):
     answer = []
     for query in query_json:
-        proposals, scores, pre_proposals, ori_scores = generate_proposal(video_feature, query['descriptions'], stride, max_stride)
+        proposals, scores, pre_proposals, ori_scores = generate_proposal(video_feature, query['descriptions'], stride, max_stride, nms_thresh=nms_thresh)
 
         if len(proposals[0]) == 0:
             static_pred = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
