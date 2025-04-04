@@ -204,39 +204,106 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
     # Kmeans Clustering
     kmeans_k = min(hyperparams['kmeans_k'], max(2, len(masked_indices)))
     if kmeans_gpu:
-        kmeans_labels = kmeans_clustering_gpu(kmeans_k, temporal_aware_features)
+        kmeans_labels_tap = kmeans_clustering_gpu(kmeans_k, temporal_aware_features)
+        kmeans_labels  = kmeans_clustering_gpu(kmeans_k, selected_video_time_features)
     else:
-        kmeans_labels = kmeans_clustering(kmeans_k, temporal_aware_features)
+        kmeans_labels_tap = kmeans_clustering(kmeans_k, temporal_aware_features)
+        kmeans_labels  = kmeans_clustering_gpu(kmeans_k, selected_video_time_features)
     
     # Kmeans clusetring 결과에 따라 비디오 장면 Segmentation
+    scene_segments_tap = segment_scenes_by_cluster(kmeans_labels_tap)
     scene_segments = segment_scenes_by_cluster(kmeans_labels)
 
+    return scene_segments_tap, scene_segments
+
+def relative_distance(gt_boundaries, scene_boundaries, num_frames):
+    thresholds = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]
+    relative_distance_list = []
+    for scene_boundary in scene_boundaries:
+        closest_gt = min(gt_boundaries, key=lambda x: abs(x - scene_boundary))
+        closest_gt_idx = gt_boundaries.index(closest_gt)
+        if closest_gt > scene_boundary:
+            distance = closest_gt - scene_boundary
+            if closest_gt_idx > 0:
+                prev_gt_idx = closest_gt_idx - 1
+                action_length = gt_boundaries[closest_gt_idx] - gt_boundaries[prev_gt_idx]
+            else:
+                action_length = closest_gt
+            
+            relative_distance = distance / action_length
+
+        elif closest_gt < scene_boundary:
+            distance = scene_boundary - closest_gt
+            if closest_gt_idx < len(gt_boundaries) - 1:
+                next_gt_idx = closest_gt_idx + 1
+                action_length = gt_boundaries[next_gt_idx] - gt_boundaries[closest_gt_idx]
+            else:
+                action_length = num_frames - closest_gt
+
+            relative_distance = distance / action_length
+        else:
+            relative_distance = 0
+        
+        relative_distance_list.append(relative_distance)
     
+    total_count = len(relative_distance_list)
+    if total_count == 0:
+        return [0] * len(thresholds)  # 빈 리스트 방지
 
-    return scene_segments
-
+    recall = [(np.sum(np.array(relative_distance_list) < threshold) / total_count) for threshold in thresholds]
+    return recall
 
 def localize(video_feature, duration, gt, query_json, stride, hyperparams, kmeans_gpu=False):
     num_frames = video_feature.shape[0]
-    boundaries = [timestamp[0] for timestamp in gt]
-    if 0 not in boundaries:
-        boundaries.append(0)
-    boundaries.sort()
-    boundaries = [(boundary / duration) * num_frames for boundary in boundaries]
+
+    gt_boundaries = list(set(timestamp[0] for timestamp in gt))
+    gt_boundaries.sort()
+    gt_boundaries = sorted(set(int((boundary / duration) * num_frames) for boundary in gt_boundaries))
+
+    if 0 in gt_boundaries:
+        gt_boundaries.remove(0)        
+        if len(gt_boundaries) == 0:
+            gt_boundaries.append(1)
+    if num_frames in gt_boundaries:
+        gt_boundaries.remove(num_frames)
+        if len(gt_boundaries) == 0:
+            gt_boundaries.append(num_frames - 1)
 
     for query in query_json:
-        scene_segments = generate_proposal_revise(video_feature, query['descriptions'], stride, hyperparams, kmeans_gpu)
+        scene_segments_tap, scene_segments = generate_proposal_revise(video_feature, query['descriptions'], stride, hyperparams, kmeans_gpu)
+    
+    scene_boundaries_tap = [scene_segment[0] for scene_segment in scene_segments_tap[1:-1]]
+    scene_boundaries = [scene_segment[0] for scene_segment in scene_segments[1:-1]]
+    
+    scene_num = len(scene_boundaries_tap) + 1
+    step_size = num_frames / scene_num  # 균등한 간격 계산
+    uniform_boundaries = [round(step_size * i) for i in range(1, scene_num)]  # 경계를 반올림하여 생성
+
+    scene_tap_recall = relative_distance(gt_boundaries, scene_boundaries_tap, num_frames)
+    scene_recall = relative_distance(gt_boundaries, scene_boundaries, num_frames)
+    uniform_recall = relative_distance(gt_boundaries, uniform_boundaries, num_frames)
         
 
-    return scene_segments
+    return scene_tap_recall, scene_recall, uniform_recall
 
 def get_args():
     parser = argparse.ArgumentParser(description='Evaluation for training-free video temporal grounding.')
     parser.add_argument('--dataset', default='charades', type=str, help='Specify the dataset. See supported datasets in data_configs.py.')
     parser.add_argument('--split', default='default', type=str, help='Specify the split. See supported splits in data_configs.py.')
     parser.add_argument('--llm_output', default=None, type=str, help='LLM prompt output. If not specified, use only VLM for evaluation.')
+    parser.add_argument('--kmeans_gpu', action='store_true', help='Enable use GPU KMeans')
+
+    return parser.parse_args()
 
 def eval_TAG(data, feature_path, stride, hyperparams, kmeans_gpu):
+    thresholds = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]
+    num_thresholds = len(thresholds)
+
+    # Threshold별 recall 합계를 저장할 리스트
+    total_scene_tap_recall = np.zeros(num_thresholds)
+    total_scene_recall = np.zeros(num_thresholds)
+    total_uniform_recall = np.zeros(num_thresholds)
+    num_videos = 0
 
     pbar = tqdm(data.items())
     for vid, ann in pbar:
@@ -246,4 +313,35 @@ def eval_TAG(data, feature_path, stride, hyperparams, kmeans_gpu):
         for i in range(len(ann['sentences'])):
             gt = ann['timestamps']
             query_json = [{'descriptions': ann['sentences'][i]}]
-            proposals = localize(video_feature, duration, gt, query_json, stride, hyperparams, kmeans_gpu)
+            scene_tap_recall, scene_recall, uniform_recall = localize(video_feature, duration, gt, query_json, stride, hyperparams, kmeans_gpu)
+
+            total_scene_tap_recall += np.array(scene_tap_recall)
+            total_scene_recall += np.array(scene_recall)
+            total_uniform_recall += np.array(uniform_recall)
+
+            num_videos += 1
+
+        # 각 threshold 별 평균 recall 계산
+    avg_scene_tap_recall = total_scene_tap_recall / num_videos
+    avg_scene_recall = total_scene_recall / num_videos
+    avg_uniform_recall = total_uniform_recall / num_videos
+
+    # 결과 출력
+    print("\nAverage Recall per Threshold:")
+    print("Thresholds:", thresholds)
+    print("Scene TAP Recall:", avg_scene_tap_recall)
+    print("Scene Recall:", avg_scene_recall)
+    print("Uniform Recall:", avg_uniform_recall)
+
+if __name__=='__main__':
+    args = get_args()
+    assert args.dataset in DATASETS, 'Unsupported dataset. To evaluate other datasets, please add the configuration in data_configs.py.'
+    dataset = DATASETS[args.dataset]
+    assert args.split in dataset['splits'], 'Unsupported split. To evaluate other split, please add the configuration in data_configs.py.'
+    
+    print('Evaluating', args.dataset, args.split)
+    
+    with open(args.llm_output) as f:
+        data = json.load(f)
+
+    eval_TAG(data, dataset['feature_path'], dataset['stride'], dataset['hyper_parameters'], args.kmeans_gpu)

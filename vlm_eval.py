@@ -153,7 +153,16 @@ if __name__=='__main__':
     
     total = sum(values)  # 전체 값의 합
     percentages = [(v / total) * 100 for v in values]  # 백분율 변환
-
+    
+    data = {
+        "keys": keys,
+        "percentages": percentages
+    }
+    
+    # JSON 파일로 저장
+    with open(f"TAG_{args.dataset}_Segment_frequency.json", "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+    
     # 그래프 설정
     plt.bar(keys, percentages, width=10 * args.unit, align='center', edgecolor='black')
 

@@ -162,7 +162,7 @@ def eval_TAG(data, feature_path, stride, hyperparams, kmeans_gpu):
     }
 
     # JSON 파일로 저장
-    with open(f"TAG_{args.dataset}_analysis.json", "w", encoding="utf-8") as f:
+    with open(f"TAG_{args.dataset}_wo_TAP_analysis.json", "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
     # import matplotlib.pyplot as plt
 
