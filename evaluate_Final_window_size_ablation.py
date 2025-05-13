@@ -28,7 +28,7 @@ def calc_iou(candidates, gt):
     return inter.clip(min=0) / union
 
 def eval_without_llm(data, feature_path, stride, hyperparams, tckmeans):
-    QGA_window_size_list = [1, 3, 5, 7, 9, 11, 13 ,15]
+    QGA_window_size_list = [1, 3, 5, 7, 9, 11, 13]
 
     for window_size in QGA_window_size_list:
         print("QGA window size: ", window_size)
