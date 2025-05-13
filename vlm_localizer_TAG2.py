@@ -16,96 +16,6 @@ vis_processors = transforms.Compose([
 ])
 #### BLIP-2 Q-Former ####
 
-
-#### CLIP ####
-clip_model, preprocess = clip.load("ViT-L/14", device='cuda')
-clip_text_encoder = clip_model.encode_text
-#### CLIP ####
-
-#### InternVideo ####
-import sys
-from pathlib import Path
-# InternVideo 모듈이 있는 디렉토리를 sys.path에 추가
-module_path = Path("./InternVideo/InternVideo1/Pretrain/Multi-Modalities-Pretraining").resolve()
-if str(module_path) not in sys.path:
-    sys.path.append(str(module_path))
-
-import InternVideo
-model_internVideo = InternVideo.load_model("./InternVideo/InternVideo1/Pretrain/Multi-Modalities-Pretraining/InternVideo-MM-L-14.ckpt").cuda()
-#### InternVideo ####
-
-def iou(candidates, gt):
-    start, end = candidates[:, 0], candidates[:, 1]
-    s, e = gt[0].float(), gt[1].float()
-    inter = end.min(e) - start.max(s)
-    union = end.max(e) - start.min(s)
-    return inter.clamp(min=0) / union
-
-def nms(video_segments, scores, iou_threshold=0.5):
-    """
-    Apply Non-Maximum Suppression (NMS) to filter video segments based on their scores and overlap.
-
-    Parameters:
-        video_segments (torch.Tensor): Tensor of shape (N, 2) containing the start and end times of video segments.
-        scores (torch.Tensor): Tensor of shape (N,) containing the scores for each segment.
-        iou_threshold (float): IOU threshold for suppression.
-
-    Returns:
-        torch.Tensor: Indices of the segments that are kept after NMS.
-    """
-    if len(video_segments) == 0:
-        return torch.tensor([], dtype=torch.long)
-
-    # Sort segments by their scores in descending order
-    indices = torch.argsort(scores, descending=True)
-    keep = []
-    
-    while len(indices) > 0:
-        # Select the segment with the highest score
-        current = indices[0].item()
-        keep.append(current)
-
-        # Compute IoU with the remaining segments
-        iou_list = []
-        for idx in indices[1:]:
-            iou_list.append(compute_iou(video_segments[current], video_segments[idx]))
-        
-        iou_list = torch.tensor(iou_list)
-
-        # Filter out segments with IoU above the threshold
-        indices = indices[1:][iou_list <= iou_threshold]
-
-    return torch.tensor(keep, dtype=torch.long)
-
-def compute_iou(segment_a, segment_b):
-    """
-    Compute Intersection over Union (IoU) between two segments.
-
-    Parameters:
-        segment_a (torch.Tensor): Start and end times of the first segment.
-        segment_b (torch.Tensor): Start and end times of the second segment.
-
-    Returns:
-        float: IoU value.
-    """
-    start_a, end_a = segment_a
-    start_b, end_b = segment_b
-
-    # Compute the intersection
-    intersection_start = max(start_a.item(), start_b.item())
-    intersection_end = min(end_a.item(), end_b.item())
-    intersection = max(0, intersection_end - intersection_start)
-
-    # Compute the union
-    union = (end_a.item() - start_a.item()) + (end_b.item() - start_b.item()) - intersection
-
-    # Avoid division by zero
-    if union == 0:
-        return 0.0
-
-    return intersection / union
-
-
 def gaussian_kernel(size, sigma=1):
     size = int(size) // 2
     x = np.arange(-size, size + 1)
@@ -113,8 +23,10 @@ def gaussian_kernel(size, sigma=1):
     g = np.exp(-x ** 2 / (2.0 * sigma ** 2)) * normal
     return g
 
+
 def nchk(f, f1, f2, ths):
     return (((3 * f) > ths) | ((2 * f + f1) > ths) | ((f + f1 + f2) > ths))
+
 
 def get_dynamic_scores(scores, stride, masks, ths=0.0005, sigma=1):
     gstride = min(stride - 2, 3)
@@ -154,63 +66,6 @@ def get_dynamic_scores(scores, stride, masks, ths=0.0005, sigma=1):
     dynamic_idxs = torch.from_numpy(dynamic_idxs).to('cuda')
     dynamic_scores = torch.from_numpy(dynamic_scores).to('cuda')
     return dynamic_idxs, dynamic_scores
-
-
-def split_interval(init_timestep):
-    init_timestep = init_timestep.cpu().sort()[0]
-    # 결과를 저장할 리스트
-    ranges = []
-
-    # 임시로 시작과 끝을 저장할 변수
-    start = init_timestep[0]
-    end = init_timestep[0].clone()
-
-    # 텐서의 각 원소를 순차적으로 비교
-    for i in range(1, len(init_timestep)):
-        if init_timestep[i] == end + 1:
-            # 연속된 숫자인 경우
-            end = init_timestep[i]
-        else:
-            # 연속되지 않은 숫자가 나타나면 구간을 추가하고 새로 시작
-            ranges.append([start, end])
-            start = init_timestep[i]
-            end = init_timestep[i].clone()
-
-    # 마지막 구간 추가
-    ranges.append([start, end])
-    return torch.tensor(ranges)
-
-import re
-def sanitize_filename(filename):
-    # 허용되지 않는 문자를 `_`로 대체
-    filename = re.sub(r'[\/:*?"<>|]', '_', filename)
-    return filename
-
-
-# calc_scores 함수 실행 후에 scores와 normalized_scores를 입력으로 사용합니다.
-import matplotlib.pyplot as plt
-def plot_scores(scores, normalized_scores, timestamps, filename="scores_plot.png"):
-    # scores와 normalized_scores를 GPU에서 CPU로 이동시키고 numpy 배열로 변환
-    scores_np = scores.squeeze().cpu().numpy()
-    normalized_scores_np = normalized_scores.squeeze().cpu().numpy()
-
-    # 그래프 생성
-    plt.figure(figsize=(10, 6))
-    plt.plot(scores_np, label="Scores", linestyle="-")
-    plt.plot(normalized_scores_np, label="Normalized Scores", linestyle="-")
-    plt.xlabel("Frame Index")
-    plt.ylabel("Score")
-    plt.title("Scores and Normalized Scores")
-    plt.legend()
-    plt.grid(True)
-    
-    # timestamps 구간을 회색으로 칠하기
-    start, end = timestamps 
-    plt.axvspan(start, end, color='gray', alpha=0.3)  # 회색 구간 추가
-
-    # 그래프를 파일로 저장
-    plt.savefig(filename)
-    plt.close()  # 메모리 절약을 위해 그래프 닫기
 
 
 def feature_tsne(features, sentence, gt, save_dir):
@@ -404,6 +259,120 @@ def kmeans_clustering_gpu(k, features, n_iter=100, tol=1e-4):
 
     return labels.cpu()
 
+
+def spherical_kmeans_gpu(k, features, n_iter=100, tol=1e-4):
+    # Ensure features are on GPU and normalized
+    torch.manual_seed(60)
+    features = F.normalize(features.cuda(), dim=1)  # Normalize to unit vectors
+    n_samples, n_features = features.shape
+
+    # Initialize centroids using k-means++ in cosine space
+    centroids = torch.empty((k, n_features), device=features.device)
+    random_idx = torch.randint(0, n_samples, (1,))
+    centroids[0] = features[random_idx]
+
+    for i in range(1, k):
+        # Use cosine distance = 1 - cosine similarity
+        cosine_sim = F.linear(features, F.normalize(centroids[:i], dim=1))
+        cosine_dist = 1 - cosine_sim
+        min_distances = torch.min(cosine_dist, dim=1).values
+        probabilities = min_distances / min_distances.sum()
+        cumulative_probs = torch.cumsum(probabilities, dim=0)
+        random_value = torch.rand(1, device=features.device)
+        next_idx = torch.searchsorted(cumulative_probs, random_value).item()
+        centroids[i] = features[next_idx]
+
+    centroids = F.normalize(centroids, dim=1)
+
+    for _ in range(n_iter):
+        # Compute cosine similarity
+        similarity = F.linear(features, centroids)  # shape: (n_samples, k)
+        labels = torch.argmax(similarity, dim=1)
+
+        new_centroids = []
+        for j in range(k):
+            assigned = features[labels == j]
+            if assigned.shape[0] > 0:
+                centroid = F.normalize(assigned.mean(dim=0, keepdim=True), dim=1)
+                new_centroids.append(centroid)
+            else:
+                # Keep previous centroid if no points assigned
+                new_centroids.append(centroids[j:j+1])
+
+        new_centroids = torch.cat(new_centroids, dim=0)
+
+        if torch.allclose(centroids, new_centroids, atol=tol):
+            break
+
+        centroids = new_centroids
+
+    return labels.cpu()
+
+
+def tckmeans_clustering_gpu(k, features, n_iter=100, tol=1e-4, temporal_window=7, alpha=0.0):
+    torch.manual_seed(60)
+    features = features.cuda()
+    n_samples, n_features = features.shape
+    half_window = temporal_window // 2
+
+    # Initialize centroids using k-means++
+    centroids = torch.empty((k, n_features), device=features.device)
+    random_idx = torch.randint(0, n_samples, (1,))
+    centroids[0] = features[random_idx]
+    for i in range(1, k):
+        dists = torch.min(torch.cdist(features, centroids[:i])**2, dim=1).values
+        probs = dists / dists.sum()
+        cum_probs = torch.cumsum(probs, dim=0)
+        r = torch.rand(1, device=features.device)
+        next_idx = torch.searchsorted(cum_probs, r).item()
+        centroids[i] = features[next_idx]
+
+    labels = torch.zeros(n_samples, dtype=torch.long, device=features.device)
+
+    for _ in range(n_iter):
+        # Calculate base distances
+        base_distances = torch.cdist(features, centroids, p=2)  # [n_samples, k]
+
+        new_labels = torch.zeros_like(labels)
+        for i in range(n_samples):
+            total_costs = []
+            start = max(0, i - half_window)
+            end = min(n_samples, i + half_window + 1)
+
+            for cluster_id in range(k):
+                # Spatial cost: average distance over temporal window
+                spatial_cost = base_distances[start:end, cluster_id].mean()
+
+                # Temporal penalty: penalize if neighbors have different labels
+                temporal_penalty = 0
+                for offset in range(-half_window, half_window + 1):
+                    j = i + offset
+                    if j < 0 or j >= n_samples or j == i:
+                        continue
+                    if labels[j] != cluster_id:
+                        temporal_penalty += 1
+
+                total_cost = spatial_cost + alpha * temporal_penalty
+                total_costs.append(total_cost)
+
+            new_labels[i] = torch.argmin(torch.tensor(total_costs, device=features.device))
+
+        # Update centroids
+        new_centroids = torch.stack([
+            features[new_labels == j].mean(dim=0) if (new_labels == j).sum() > 0 else centroids[j]
+            for j in range(k)
+        ])
+
+        # Check convergence
+        if torch.allclose(centroids, new_centroids, atol=tol):
+            break
+
+        centroids = new_centroids
+        labels = new_labels
+
+    return labels.cpu()
+
+
 def segment_scenes_by_cluster(cluster_labels):
     scene_segments = []
     start_idx = 0
@@ -440,45 +409,25 @@ def get_proposals_with_scores(scene_segments, cum_scores, frame_scores, num_fram
 
 def generate_proposal_revise(video_features, sentences, stride, hyperparams, kmeans_gpu):
     num_frames = video_features.shape[0]
-    if hyperparams['is_clip']:
-        with torch.no_grad():
-           text_tokens = clip.tokenize(sentences).to(device='cuda')
-           text_feat = clip_text_encoder(text_tokens)
-        v1 = F.normalize(text_feat, p=2, dim=1)  # Normalize along feature dimension
-        v2 = F.normalize(torch.tensor(video_features, device='cuda', dtype=v1.dtype), p=2, dim=1)  # Normalize along feature dimension
-        scores = torch.matmul(v2, v1.T).squeeze()
-        scores = scores.unsqueeze(0)
-        video_features = torch.tensor(video_features).cuda()
-    elif hyperparams['is_internVideo']:
-        with torch.no_grad():
-            text = InternVideo.tokenize([sentences]).cuda()
-            text_feat =  model_internVideo.encode_text(text)
-            video_features = torch.tensor(video_features).cuda()
 
-            v1 = F.normalize(text_feat, dim=1)
-            v2 = torch.nn.functional.normalize(video_features, dim=1)
-            scores = (v1 @ v2.T) # (num_segments, num_texts)
-    else:
-        with torch.no_grad():
-            text = model.tokenizer(sentences, padding='max_length', truncation=True, max_length=35, return_tensors="pt").to(
-                'cuda')
-            text_output = model.Qformer.bert(text.input_ids, attention_mask=text.attention_mask, return_dict=True)
-            text_feat = model.text_proj(text_output.last_hidden_state[:, 0, :])
-        v1 = F.normalize(text_feat, dim=-1)
-        v2 = F.normalize(torch.tensor(video_features, device='cuda', dtype=v1.dtype), dim=-1)
-        scores = torch.einsum('md,npd->mnp', v1, v2)
-        scores, scores_idx = scores.max(dim=-1)
-        scores = scores.mean(dim=0, keepdim=True)
-    
+    with torch.no_grad():
+        text = model.tokenizer(sentences, padding='max_length', truncation=True, max_length=35, return_tensors="pt").to(
+            'cuda')
+        text_output = model.Qformer.bert(text.input_ids, attention_mask=text.attention_mask, return_dict=True)
+        text_feat = model.text_proj(text_output.last_hidden_state[:, 0, :])
+    v1 = F.normalize(text_feat, dim=-1)
+    v2 = F.normalize(torch.tensor(video_features, device='cuda', dtype=v1.dtype), dim=-1)
+    scores = torch.einsum('md,npd->mnp', v1, v2)
+    scores, scores_idx = scores.max(dim=-1)
+    scores = scores.mean(dim=0, keepdim=True)
+
     # scores > 0.2인 마스킹 생성 (Boolean 형태 유지)
     initial_masks = (scores > 0.2 if hyperparams['is_blip2'] else scores > 0)
     masks, masked_indices = scores_masking(scores, initial_masks)
 
     # Alignment adjustment of similarity scores
     data = scores[:, masks].flatten().cpu().numpy()   # 마스크된 부분만 가져오기    
-    # normalized_scores, is_scale = alignment_adjustment(data, hyperparams['gamma'], scores.device, lambda_max=2, lambda_min=-2)
-    data = data.reshape(1, -1)  # shape: (1, 93)
-    data = torch.from_numpy(data).cuda()
+    normalized_scores, is_scale = alignment_adjustment(data, hyperparams['gamma'], scores.device, lambda_max=2, lambda_min=-2)
     
     if hyperparams['is_blip2'] or hyperparams['is_blip']:
         video_features = torch.tensor(video_features).cuda()
@@ -487,26 +436,27 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
     else:
         selected_video_features = video_features
         
-    time_features = (torch.arange(num_frames) / num_frames).unsqueeze(1).cuda()
-    selected_video_time_features = torch.cat((selected_video_features, time_features), dim=1)
-    selected_video_time_features = selected_video_time_features[masks]
+    # time_features = (torch.arange(num_frames) / num_frames).unsqueeze(1).cuda()
+    # selected_video_time_features = torch.cat((selected_video_features, time_features), dim=1)
+    # selected_video_time_features = selected_video_time_features[masks]
 
-    # Temporal-aware vector smoothing
-    temporal_aware_features = temporal_aware_feature_smoothing(hyperparams['temporal_window_size'], selected_video_time_features)
+    # # Temporal-aware vector smoothing
+    # temporal_aware_features = temporal_aware_feature_smoothing(hyperparams['temporal_window_size'], selected_video_time_features)
+    selected_video_features = selected_video_features[masks].float()
 
     # Kmeans Clustering
     kmeans_k = min(hyperparams['kmeans_k'], max(2, len(masked_indices)))
     if kmeans_gpu:
-        kmeans_labels = kmeans_clustering_gpu(kmeans_k, temporal_aware_features)
+        kmeans_labels = tckmeans_clustering_gpu(kmeans_k, selected_video_features)
     else:
-        kmeans_labels = kmeans_clustering(kmeans_k, temporal_aware_features)
-    
+        kmeans_labels = kmeans_clustering(kmeans_k, selected_video_features)
+
     # Kmeans clusetring 결과에 따라 비디오 장면 Segmentation
     scene_segments = segment_scenes_by_cluster(kmeans_labels)
 
     # proposal generation by using scene segments integration
-    cum_scores = torch.cumsum(data, dim=1)[0]
-    final_proposals, final_proposals_static_score = get_proposals_with_scores(scene_segments, cum_scores, data, num_frames, hyperparams['prior'])
+    cum_scores = torch.cumsum(normalized_scores, dim=1)[0]
+    final_proposals, final_proposals_static_score = get_proposals_with_scores(scene_segments, cum_scores, normalized_scores, num_frames, hyperparams['prior'])
 
     final_proposals = [
         [
@@ -515,6 +465,13 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
         ]
         for start, last in final_proposals
     ]
+
+    ### TCKMeans 1 Cluster 예외처리 ###
+    if len(final_proposals) == 0:
+        final_proposals.append([0, num_frames])
+        final_proposals_static_score.append(1)
+    ### TCKMeans 1 Cluster 예외처리 ###
+
     final_proposals = torch.tensor(final_proposals)
     final_proposals_static_score = torch.tensor(final_proposals_static_score)
     _, index_static = final_proposals_static_score.sort(descending=True)
@@ -540,7 +497,6 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
                 break
             current_frame -= 1
         final_proposal[0] = current_frame
-
     final_prefix = final_proposals[:, 0].clone().detach()
     #### dynamic scoring #####
 
