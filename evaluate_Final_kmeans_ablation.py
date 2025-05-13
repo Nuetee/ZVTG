@@ -28,17 +28,16 @@ def calc_iou(candidates, gt):
     return inter.clip(min=0) / union
 
 def eval_without_llm(data, feature_path, stride, hyperparams, tckmeans):
-    ious = []
-    thresh = np.array([0.3, 0.5, 0.7])
-    recall = np.array([0, 0, 0])
-    pbar = tqdm(data.items())
-
     num_of_clusters_list = [3, 4, 5, 6, 7, 8, 9, 10]
 
     for num_of_clusters in num_of_clusters_list:
         print("Number of clusters: ", num_of_clusters)
-
+        ious = []
+        thresh = np.array([0.3, 0.5, 0.7])
+        recall = np.array([0, 0, 0])
+        pbar = tqdm(data.items())
         hyperparams["kmeans_k"] = num_of_clusters
+
         for vid, ann in pbar:
             duration = ann['duration']
             video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
