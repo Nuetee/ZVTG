@@ -676,8 +676,8 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
     # Kmeans Clustering
     kmeans_k = min(hyperparams['kmeans_k'], max(2, len(masked_indices)))
     if kmeans_gpu:
-        # kmeans_labels = kmeans_clustering_legacy_gpu(kmeans_k, temporal_aware_features)
-        kmeans_labels = tckmeans_clustering_gpu(kmeans_k, temporal_aware_features)
+        kmeans_labels = kmeans_clustering_gpu(kmeans_k, temporal_aware_features)
+        # kmeans_labels = tckmeans_clustering_gpu(kmeans_k, temporal_aware_features)
     else:
         kmeans_labels = kmeans_clustering(kmeans_k, temporal_aware_features)
     
