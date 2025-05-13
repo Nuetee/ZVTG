@@ -309,7 +309,70 @@ def spherical_kmeans_gpu(k, features, n_iter=100, tol=1e-4):
     return labels.cpu()
 
 
-def tckmeans_clustering_gpu(k, features, n_iter=100, tol=1e-4, temporal_window=7, alpha=0.0):
+# def tckmeans_clustering_gpu_legacy(k, features, n_iter=100, tol=1e-4, temporal_window=7, alpha=0.0):
+#     torch.manual_seed(60)
+#     features = features.cuda()
+#     n_samples, n_features = features.shape
+#     half_window = temporal_window // 2
+
+#     # Initialize centroids using k-means++
+#     centroids = torch.empty((k, n_features), device=features.device)
+#     random_idx = torch.randint(0, n_samples, (1,))
+#     centroids[0] = features[random_idx]
+#     for i in range(1, k):
+#         dists = torch.min(torch.cdist(features, centroids[:i])**2, dim=1).values
+#         probs = dists / dists.sum()
+#         cum_probs = torch.cumsum(probs, dim=0)
+#         r = torch.rand(1, device=features.device)
+#         next_idx = torch.searchsorted(cum_probs, r).item()
+#         centroids[i] = features[next_idx]
+
+#     labels = torch.zeros(n_samples, dtype=torch.long, device=features.device)
+
+#     for _ in range(n_iter):
+#         # Calculate base distances
+#         base_distances = torch.cdist(features, centroids, p=2)  # [n_samples, k]
+
+#         new_labels = torch.zeros_like(labels)
+#         for i in range(n_samples):
+#             total_costs = []
+#             start = max(0, i - half_window)
+#             end = min(n_samples, i + half_window + 1)
+
+#             for cluster_id in range(k):
+#                 # Spatial cost: average distance over temporal window
+#                 spatial_cost = base_distances[start:end, cluster_id].mean()
+
+#                 # Temporal penalty: penalize if neighbors have different labels
+#                 temporal_penalty = 0
+#                 for offset in range(-half_window, half_window + 1):
+#                     j = i + offset
+#                     if j < 0 or j >= n_samples or j == i:
+#                         continue
+#                     if labels[j] != cluster_id:
+#                         temporal_penalty += 1
+
+#                 total_cost = spatial_cost + alpha * temporal_penalty
+#                 total_costs.append(total_cost)
+
+#             new_labels[i] = torch.argmin(torch.tensor(total_costs, device=features.device))
+
+#         # Update centroids
+#         new_centroids = torch.stack([
+#             features[new_labels == j].mean(dim=0) if (new_labels == j).sum() > 0 else centroids[j]
+#             for j in range(k)
+#         ])
+
+#         # Check convergence
+#         if torch.allclose(centroids, new_centroids, atol=tol):
+#             break
+
+#         centroids = new_centroids
+#         labels = new_labels
+
+#     return labels.cpu()
+
+def tckmeans_clustering_gpu(k, features, n_iter=100, tol=1e-4, temporal_window=7):
     torch.manual_seed(60)
     features = features.cuda()
     n_samples, n_features = features.shape
@@ -330,32 +393,77 @@ def tckmeans_clustering_gpu(k, features, n_iter=100, tol=1e-4, temporal_window=7
     labels = torch.zeros(n_samples, dtype=torch.long, device=features.device)
 
     for _ in range(n_iter):
-        # Calculate base distances
-        base_distances = torch.cdist(features, centroids, p=2)  # [n_samples, k]
+        base_distances = torch.cdist(features, centroids, p=2)  # shape: [n_samples, k]
+        new_labels = torch.empty_like(labels)
 
-        new_labels = torch.zeros_like(labels)
         for i in range(n_samples):
-            total_costs = []
             start = max(0, i - half_window)
             end = min(n_samples, i + half_window + 1)
 
-            for cluster_id in range(k):
-                # Spatial cost: average distance over temporal window
-                spatial_cost = base_distances[start:end, cluster_id].mean()
+            # 평균 거리 계산 over window
+            spatial_costs = base_distances[start:end].mean(dim=0)  # shape: [k]
+            new_labels[i] = torch.argmin(spatial_costs)
 
-                # Temporal penalty: penalize if neighbors have different labels
-                temporal_penalty = 0
-                for offset in range(-half_window, half_window + 1):
-                    j = i + offset
-                    if j < 0 or j >= n_samples or j == i:
-                        continue
-                    if labels[j] != cluster_id:
-                        temporal_penalty += 1
+        # 중심점 업데이트
+        new_centroids = torch.stack([
+            features[new_labels == j].mean(dim=0) if (new_labels == j).sum() > 0 else centroids[j]
+            for j in range(k)
+        ])
 
-                total_cost = spatial_cost + alpha * temporal_penalty
-                total_costs.append(total_cost)
+        if torch.allclose(centroids, new_centroids, atol=tol):
+            break
 
-            new_labels[i] = torch.argmin(torch.tensor(total_costs, device=features.device))
+        centroids = new_centroids
+        labels = new_labels
+
+    return labels.cpu()
+
+
+def tckmeans_clustering_weighted_gpu(k, features, n_iter=100, tol=1e-4, temporal_window=3, sigma=1.0):
+    torch.manual_seed(60)
+    features = features.cuda()
+    n_samples, n_features = features.shape
+    half_window = temporal_window // 2
+
+    # Initialize centroids using K-Means++
+    centroids = torch.empty((k, n_features), device=features.device)
+    random_idx = torch.randint(0, n_samples, (1,))
+    centroids[0] = features[random_idx]
+    for i in range(1, k):
+        dists = torch.min(torch.cdist(features, centroids[:i])**2, dim=1).values
+        probs = dists / dists.sum()
+        cum_probs = torch.cumsum(probs, dim=0)
+        r = torch.rand(1, device=features.device)
+        next_idx = torch.searchsorted(cum_probs, r).item()
+        centroids[i] = features[next_idx]
+
+    labels = torch.zeros(n_samples, dtype=torch.long, device=features.device)
+
+    for _ in range(n_iter):
+        base_distances = torch.cdist(features, centroids, p=2)  # shape: [n_samples, k]
+        new_labels = torch.empty_like(labels)
+
+        for i in range(n_samples):
+            start = max(0, i - half_window)
+            end = min(n_samples, i + half_window + 1)
+
+            x_i = features[i]  # [n_features]
+            neighbors = features[start:end]  # [w, n_features]
+
+            # # Similarity (RBF) weights - L2 Distance
+            # sim = torch.exp(-((neighbors - x_i)**2).sum(dim=1) / (2 * sigma**2))  # [w]
+            # weights = sim / sim.sum()
+            
+            # Cosine similarity weights
+            sim = F.cosine_similarity(neighbors, x_i.unsqueeze(0), dim=1)  # [w]
+            sim = torch.clamp(sim, min=0.0)  # remove negative similarity
+            weights = sim / (sim.sum() + 1e-8)
+
+            # Weighted average of distances over window
+            dists_window = base_distances[start:end]  # [w, k]
+            spatial_costs = torch.matmul(weights, dists_window)  # [k]
+
+            new_labels[i] = torch.argmin(spatial_costs)
 
         # Update centroids
         new_centroids = torch.stack([
@@ -363,7 +471,6 @@ def tckmeans_clustering_gpu(k, features, n_iter=100, tol=1e-4, temporal_window=7
             for j in range(k)
         ])
 
-        # Check convergence
         if torch.allclose(centroids, new_centroids, atol=tol):
             break
 
@@ -436,20 +543,21 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
     else:
         selected_video_features = video_features
         
-    # time_features = (torch.arange(num_frames) / num_frames).unsqueeze(1).cuda()
-    # selected_video_time_features = torch.cat((selected_video_features, time_features), dim=1)
-    # selected_video_time_features = selected_video_time_features[masks]
+    time_features = (torch.arange(num_frames) / num_frames).unsqueeze(1).cuda()
+    selected_video_time_features = torch.cat((selected_video_features, time_features), dim=1)
+    selected_video_time_features = selected_video_time_features[masks]
 
-    # # Temporal-aware vector smoothing
-    # temporal_aware_features = temporal_aware_feature_smoothing(hyperparams['temporal_window_size'], selected_video_time_features)
-    selected_video_features = selected_video_features[masks].float()
+    # Temporal-aware vector smoothing
+    temporal_aware_features = temporal_aware_feature_smoothing(hyperparams['temporal_window_size'], selected_video_time_features)
+    # selected_video_features = selected_video_features[masks].float()
 
     # Kmeans Clustering
     kmeans_k = min(hyperparams['kmeans_k'], max(2, len(masked_indices)))
     if kmeans_gpu:
-        kmeans_labels = tckmeans_clustering_gpu(kmeans_k, selected_video_features)
+        kmeans_labels = tckmeans_clustering_gpu(kmeans_k, temporal_aware_features)
+        # kmeans_labels = tckmeans_clustering_weighted_gpu(kmeans_k, temporal_aware_features)
     else:
-        kmeans_labels = kmeans_clustering(kmeans_k, selected_video_features)
+        kmeans_labels = kmeans_clustering(kmeans_k, temporal_aware_features)
 
     # Kmeans clusetring 결과에 따라 비디오 장면 Segmentation
     scene_segments = segment_scenes_by_cluster(kmeans_labels)

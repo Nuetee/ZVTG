@@ -17,23 +17,6 @@ vis_processors = transforms.Compose([
 #### BLIP-2 Q-Former ####
 
 
-#### CLIP ####
-clip_model, preprocess = clip.load("ViT-L/14", device='cuda')
-clip_text_encoder = clip_model.encode_text
-#### CLIP ####
-
-#### InternVideo ####
-import sys
-from pathlib import Path
-# InternVideo 모듈이 있는 디렉토리를 sys.path에 추가
-module_path = Path("./InternVideo/InternVideo1/Pretrain/Multi-Modalities-Pretraining").resolve()
-if str(module_path) not in sys.path:
-    sys.path.append(str(module_path))
-
-import InternVideo
-model_internVideo = InternVideo.load_model("./InternVideo/InternVideo1/Pretrain/Multi-Modalities-Pretraining/InternVideo-MM-L-14.ckpt").cuda()
-#### InternVideo ####
-
 def iou(candidates, gt):
     start, end = candidates[:, 0], candidates[:, 1]
     s, e = gt[0].float(), gt[1].float()
@@ -355,73 +338,6 @@ def temporal_aware_feature_smoothing(kernel_size, features):
     return temporal_aware_features
 
 
-def text_guided_adaptive_pooling(features, query_feat, window_size=11, beta=7.0):
-    """
-    features: (T, D) - sequence of frame features
-    query_feat: (D,) - query embedding
-    """
-    features = features.float()
-    query_feat = query_feat.float()
-
-    T, D = features.shape
-    assert window_size % 2 == 1, "window_size must be odd"
-    r = window_size // 2
-
-    padded = torch.cat([
-        features[0].unsqueeze(0).repeat(r, 1),
-        features,
-        features[-1].unsqueeze(0).repeat(r, 1)
-    ], dim=0)
-
-    normed_query = F.normalize(query_feat.view(-1), dim=0)  # (D,)
-    normed_padded = F.normalize(padded, dim=1)  # (T + 2r, D)
-
-    output = []
-    for i in range(T):
-        window_feats = normed_padded[i:i + window_size]  # (window_size, D)
-        sims = torch.matmul(window_feats, normed_query)  # (window_size,)
-        weights = F.softmax(beta * sims, dim=0)  # (window_size,)
-        pooled = torch.sum(weights.unsqueeze(1) * padded[i:i + window_size], dim=0)  # (D,)
-        output.append(pooled)
-
-    return torch.stack(output, dim=0)  # (T, D)
-
-
-def self_attention_window_pooling(features, window_size=11, beta=1):
-    """
-    features: (T, D) - sequence of frame features
-    Returns: (T, D) - adaptively pooled features using self-attention within temporal window
-    """
-    features = features.float()
-    T, D = features.shape
-    assert window_size % 2 == 1, "window_size must be odd"
-    r = window_size // 2
-
-    # Padding to handle boundary frames
-    padded = torch.cat([
-        features[0].unsqueeze(0).repeat(r, 1),  # front padding
-        features,
-        features[-1].unsqueeze(0).repeat(r, 1)  # back padding
-    ], dim=0)  # shape: (T + 2r, D)
-
-    output = []
-    for i in range(T):
-        window_feats = padded[i:i + window_size]  # (window_size, D)
-
-        # Normalize for cosine similarity-like behavior (optional)
-        normed = F.normalize(window_feats, dim=1)  # (window_size, D)
-
-        # Self-attention: compute attention weights among features
-        attn_scores = torch.matmul(normed, normed[r].unsqueeze(1)).squeeze(1)  # (window_size,)
-        weights = F.softmax(attn_scores * beta, dim=0)  # (window_size,)
-
-        # Weighted pooling
-        pooled = torch.sum(weights.unsqueeze(1) * window_feats, dim=0)  # (D,)
-        output.append(pooled)
-
-    return torch.stack(output, dim=0)  # (T, D)
-
-
 def kmeans_clustering(k, features):
     kmeans = KMeans(n_clusters=k, n_init=10, random_state=42)
     kmeans_labels = kmeans.fit_predict(np.array(features.cpu()))
@@ -471,105 +387,6 @@ def kmeans_clustering_gpu(k, features, n_iter=100, tol=1e-4):
 
     return labels.cpu()
 
-
-def kmeans_clustering_legacy_gpu(k, features, n_iter=100, tol=1e-4):
-    # Ensure features are on GPU
-    torch.manual_seed(60)
-    features = features.cuda()
-    n_samples, n_features = features.shape
-
-    # Initialize centroids randomly (KMeans 방식)
-    random_indices = torch.randperm(n_samples)[:k]
-    centroids = features[random_indices].clone()
-
-    # Perform k-means clustering
-    for i in range(n_iter):
-        # Calculate distances
-        distances = torch.cdist(features, centroids, p=2)
-
-        # Assign clusters
-        labels = torch.argmin(distances, dim=1)
-
-        # Update centroids
-        new_centroids = torch.stack([
-            features[labels == j].mean(dim=0) if (labels == j).sum() > 0 else centroids[j]
-            for j in range(k)
-        ])
-
-        # Check for convergence
-        if torch.allclose(centroids, new_centroids, atol=tol):
-            break
-
-        centroids = new_centroids
-
-    return labels.cpu()
-
-
-
-def tckmeans_clustering_gpu(k, features, n_iter=100, tol=1e-4, temporal_window=7, alpha=0.0):
-    torch.manual_seed(60)
-    features = features.cuda()
-    n_samples, n_features = features.shape
-    half_window = temporal_window // 2
-
-    # Initialize centroids using k-means++
-    centroids = torch.empty((k, n_features), device=features.device)
-    random_idx = torch.randint(0, n_samples, (1,))
-    centroids[0] = features[random_idx]
-    for i in range(1, k):
-        dists = torch.min(torch.cdist(features, centroids[:i])**2, dim=1).values
-        probs = dists / dists.sum()
-        cum_probs = torch.cumsum(probs, dim=0)
-        r = torch.rand(1, device=features.device)
-        next_idx = torch.searchsorted(cum_probs, r).item()
-        centroids[i] = features[next_idx]
-
-    labels = torch.zeros(n_samples, dtype=torch.long, device=features.device)
-
-    for _ in range(n_iter):
-        # Calculate base distances
-        base_distances = torch.cdist(features, centroids, p=2)  # [n_samples, k]
-
-        new_labels = torch.zeros_like(labels)
-        for i in range(n_samples):
-            total_costs = []
-            start = max(0, i - half_window)
-            end = min(n_samples, i + half_window + 1)
-
-            for cluster_id in range(k):
-                # Spatial cost: average distance over temporal window
-                spatial_cost = base_distances[start:end, cluster_id].mean()
-
-                # Temporal penalty: penalize if neighbors have different labels
-                temporal_penalty = 0
-                for offset in range(-half_window, half_window + 1):
-                    j = i + offset
-                    if j < 0 or j >= n_samples or j == i:
-                        continue
-                    if labels[j] != cluster_id:
-                        temporal_penalty += 1
-
-                total_cost = spatial_cost + alpha * temporal_penalty
-                total_costs.append(total_cost)
-
-            new_labels[i] = torch.argmin(torch.tensor(total_costs, device=features.device))
-
-        # Update centroids
-        new_centroids = torch.stack([
-            features[new_labels == j].mean(dim=0) if (new_labels == j).sum() > 0 else centroids[j]
-            for j in range(k)
-        ])
-
-        # Check convergence
-        if torch.allclose(centroids, new_centroids, atol=tol):
-            break
-
-        centroids = new_centroids
-        labels = new_labels
-
-    return labels.cpu()
-
-
 def segment_scenes_by_cluster(cluster_labels):
     scene_segments = []
     start_idx = 0
@@ -606,36 +423,18 @@ def get_proposals_with_scores(scene_segments, cum_scores, frame_scores, num_fram
 
 def generate_proposal_revise(video_features, sentences, stride, hyperparams, kmeans_gpu):
     num_frames = video_features.shape[0]
-    if hyperparams['is_clip']:
-        with torch.no_grad():
-           text_tokens = clip.tokenize(sentences).to(device='cuda')
-           text_feat = clip_text_encoder(text_tokens)
-        v1 = F.normalize(text_feat, p=2, dim=1)  # Normalize along feature dimension
-        v2 = F.normalize(torch.tensor(video_features, device='cuda', dtype=v1.dtype), p=2, dim=1)  # Normalize along feature dimension
-        scores = torch.matmul(v2, v1.T).squeeze()
-        scores = scores.unsqueeze(0)
-        video_features = torch.tensor(video_features).cuda()
-    elif hyperparams['is_internVideo']:
-        with torch.no_grad():
-            text = InternVideo.tokenize([sentences]).cuda()
-            text_feat =  model_internVideo.encode_text(text)
-            video_features = torch.tensor(video_features).cuda()
 
-            v1 = F.normalize(text_feat, dim=1)
-            v2 = torch.nn.functional.normalize(video_features, dim=1)
-            scores = (v1 @ v2.T) # (num_segments, num_texts)
-    else:
-        with torch.no_grad():
-            text = model.tokenizer(sentences, padding='max_length', truncation=True, max_length=35, return_tensors="pt").to(
-                'cuda')
-            text_output = model.Qformer.bert(text.input_ids, attention_mask=text.attention_mask, return_dict=True)
-            text_feat = model.text_proj(text_output.last_hidden_state[:, 0, :])
-        v1 = F.normalize(text_feat, dim=-1)
-        v2 = F.normalize(torch.tensor(video_features, device='cuda', dtype=v1.dtype), dim=-1)
-        scores = torch.einsum('md,npd->mnp', v1, v2)
-        scores, scores_idx = scores.max(dim=-1)
-        scores = scores.mean(dim=0, keepdim=True)
-    
+    with torch.no_grad():
+        text = model.tokenizer(sentences, padding='max_length', truncation=True, max_length=35, return_tensors="pt").to(
+            'cuda')
+        text_output = model.Qformer.bert(text.input_ids, attention_mask=text.attention_mask, return_dict=True)
+        text_feat = model.text_proj(text_output.last_hidden_state[:, 0, :])
+    v1 = F.normalize(text_feat, dim=-1)
+    v2 = F.normalize(torch.tensor(video_features, device='cuda', dtype=v1.dtype), dim=-1)
+    scores = torch.einsum('md,npd->mnp', v1, v2)
+    scores, scores_idx = scores.max(dim=-1)
+    scores = scores.mean(dim=0, keepdim=True)
+
     # scores > 0.2인 마스킹 생성 (Boolean 형태 유지)
     initial_masks = (scores > 0.2 if hyperparams['is_blip2'] else scores > 0)
     masks, masked_indices = scores_masking(scores, initial_masks)
@@ -656,28 +455,26 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
         selected_video_features = video_features[torch.arange(num_frames), scores_idx]
     else:
         selected_video_features = video_features
-    
-    ###  Attention-based Pooling ###
-    # Mean pooling
-    # time_features = (torch.arange(num_frames) / num_frames).unsqueeze(1).cuda()
-    # selected_video_time_features = torch.cat((selected_video_features, time_features), dim=1)
-    # selected_video_time_features = selected_video_time_features[masks]
-    # temporal_aware_features = temporal_aware_feature_smoothing(hyperparams['temporal_window_size'], selected_video_time_features)
-    
-    # Text Cross-attention 
-    selected_video_features = selected_video_features[masks].cuda()
-    temporal_aware_features = text_guided_adaptive_pooling(selected_video_features, text_feat, window_size=hyperparams['temporal_window_size'])
-    
-    # Frame Self-attention
-    # selected_video_features = selected_video_features[masks].cuda()
-    # temporal_aware_features = self_attention_window_pooling(selected_video_features, window_size=hyperparams['temporal_window_size'])
-    ###  Attention-based Pooling ###
+        
+    time_features = (torch.arange(num_frames) / num_frames).unsqueeze(1).cuda()
+    selected_video_time_features = torch.cat((selected_video_features, time_features), dim=1)
+    selected_video_time_features = selected_video_time_features[masks]
+
+    # Temporal-aware vector smoothing
+    temporal_aware_features = temporal_aware_feature_smoothing(hyperparams['temporal_window_size'], selected_video_time_features)
+
+
+    ### Text Similarity-based feature scaling ###
+    similarity_scores = torch.tensor(data, dtype=temporal_aware_features.dtype, device='cuda')
+    similarity_weights = similarity_scores.sqrt().float()
+    temporal_aware_features = temporal_aware_features * similarity_weights.unsqueeze(1)  # scaling
+    ### Text Similarity-based feature scaling ###
+
 
     # Kmeans Clustering
     kmeans_k = min(hyperparams['kmeans_k'], max(2, len(masked_indices)))
     if kmeans_gpu:
-        # kmeans_labels = kmeans_clustering_legacy_gpu(kmeans_k, temporal_aware_features)
-        kmeans_labels = tckmeans_clustering_gpu(kmeans_k, temporal_aware_features)
+        kmeans_labels = kmeans_clustering_gpu(kmeans_k, temporal_aware_features)
     else:
         kmeans_labels = kmeans_clustering(kmeans_k, temporal_aware_features)
     
@@ -700,6 +497,10 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, kme
     _, index_static = final_proposals_static_score.sort(descending=True)
     final_proposals = final_proposals[index_static]
     final_proposals_scores = final_proposals_static_score[index_static] 
+
+    # selected_indices = nms(final_proposals, final_proposals_scores, 0.3)
+    # final_proposals = final_proposals[selected_indices]
+    # final_proposals_scores = final_proposals_scores[selected_indices]
 
     #### dynamic scoring #####
     masked_scores = scores * initial_masks.float()
