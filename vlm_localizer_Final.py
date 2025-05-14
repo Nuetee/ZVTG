@@ -443,6 +443,40 @@ def kmeans_clustering_gpu(k, features, n_iter=100, tol=1e-4):
 
     return labels.cpu()
 
+
+def kmeans_clustering_legacy_gpu(k, features, n_iter=100, tol=1e-4):
+    # Ensure features are on GPU
+    torch.manual_seed(60)
+    features = features.cuda()
+    n_samples, n_features = features.shape
+
+    # Initialize centroids randomly (KMeans 방식)
+    random_indices = torch.randperm(n_samples)[:k]
+    centroids = features[random_indices].clone()
+
+    # Perform k-means clustering
+    for i in range(n_iter):
+        # Calculate distances
+        distances = torch.cdist(features, centroids, p=2)
+
+        # Assign clusters
+        labels = torch.argmin(distances, dim=1)
+
+        # Update centroids
+        new_centroids = torch.stack([
+            features[labels == j].mean(dim=0) if (labels == j).sum() > 0 else centroids[j]
+            for j in range(k)
+        ])
+
+        # Check for convergence
+        if torch.allclose(centroids, new_centroids, atol=tol):
+            break
+
+        centroids = new_centroids
+
+    return labels.cpu()
+
+
 def segment_scenes_by_cluster(cluster_labels):
     scene_segments = []
     start_idx = 0
