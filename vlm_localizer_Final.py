@@ -530,6 +530,7 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, tck
     else:
         selected_video_features = video_features
     
+    ### TAP ###
     # Time Positional Encoding
     time_features = (torch.arange(num_frames) / num_frames).unsqueeze(1).cuda()
     selected_video_time_features = torch.cat((selected_video_features, time_features), dim=1)
@@ -537,6 +538,11 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, tck
 
     # Temporal-aware vector smoothing
     temporal_aware_features = temporal_aware_feature_smoothing(hyperparams['temporal_window_size'], selected_video_time_features)
+    ### TAP ###
+
+    ### w/o TAP ###
+    # temporal_aware_features = selected_video_features[masks].cuda().float()
+    ### w/o TAP ###
 
     # Kmeans Clustering
     kmeans_k = min(hyperparams['kmeans_k'], max(2, len(masked_indices)))
