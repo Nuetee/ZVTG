@@ -354,7 +354,7 @@ def temporal_aware_feature_smoothing(kernel_size, features):
 
     return temporal_aware_features
 
-def gaussian_kernel2(size, sigma=2.0):
+def gaussian_kernel2(size, sigma=1.0):
     # Create 1D Gaussian kernel
     coords = torch.arange(size, dtype=torch.float32) - size // 2
     kernel = torch.exp(-(coords ** 2) / (2 * sigma ** 2))
