@@ -341,36 +341,18 @@ def alignment_adjustment(data, scale_gamma, device, lambda_max=2, lambda_min=-2)
     return normalized_scores, is_scale
 
 
-def text_guided_adaptive_pooling(features, query_feat, window_size=11, beta=7.0):
-    """
-    features: (T, D) - sequence of frame features
-    query_feat: (D,) - query embedding
-    """
-    features = features.float()
-    query_feat = query_feat.float()
+def temporal_aware_feature_smoothing(kernel_size, features):
+    padding_size = kernel_size // 2
+    padded_features = torch.cat((features[0].repeat(padding_size, 1), features, features[-1].repeat(padding_size, 1)), dim=0)
+    kernel = torch.ones(padded_features.shape[1], 1, kernel_size).cuda() / kernel_size
+    padded_features = padded_features.unsqueeze(0).permute(0, 2, 1)  # (1, 257, 104)
+    padded_features = padded_features.float()
 
-    T, D = features.shape
-    assert window_size % 2 == 1, "window_size must be odd"
-    r = window_size // 2
+    temporal_aware_features = F.conv1d(padded_features, kernel, padding=0, groups=padded_features.shape[1])
+    temporal_aware_features = temporal_aware_features.permute(0, 2, 1)
+    temporal_aware_features = temporal_aware_features[0]
 
-    padded = torch.cat([
-        features[0].unsqueeze(0).repeat(r, 1),
-        features,
-        features[-1].unsqueeze(0).repeat(r, 1)
-    ], dim=0)
-
-    normed_query = F.normalize(query_feat.view(-1), dim=0)  # (D,)
-    normed_padded = F.normalize(padded, dim=1)  # (T + 2r, D)
-
-    output = []
-    for i in range(T):
-        window_feats = normed_padded[i:i + window_size]  # (window_size, D)
-        sims = torch.matmul(window_feats, normed_query)  # (window_size,)
-        weights = F.softmax(beta * sims, dim=0)  # (window_size,)
-        pooled = torch.sum(weights.unsqueeze(1) * padded[i:i + window_size], dim=0)  # (D,)
-        output.append(pooled)
-
-    return torch.stack(output, dim=0)  # (T, D)
+    return temporal_aware_features
 
 
 def tckmeans_clustering_gpu(k, features, n_iter=100, tol=1e-4, temporal_window=7):
@@ -418,7 +400,6 @@ def tckmeans_clustering_gpu(k, features, n_iter=100, tol=1e-4, temporal_window=7
         labels = new_labels
 
     return labels.cpu()
-
 
 
 def kmeans_clustering_gpu(k, features, n_iter=100, tol=1e-4):
@@ -548,10 +529,14 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, tck
         selected_video_features = video_features[torch.arange(num_frames), scores_idx]
     else:
         selected_video_features = video_features
-        
-    # Text-Guided Attention 
-    selected_video_features = selected_video_features[masks].cuda()
-    temporal_aware_features = text_guided_adaptive_pooling(selected_video_features, text_feat, window_size=hyperparams['temporal_window_size'])
+    
+    # Time Positional Encoding
+    time_features = (torch.arange(num_frames) / num_frames).unsqueeze(1).cuda()
+    selected_video_time_features = torch.cat((selected_video_features, time_features), dim=1)
+    selected_video_time_features = selected_video_time_features[masks]
+
+    # Temporal-aware vector smoothing
+    temporal_aware_features = temporal_aware_feature_smoothing(hyperparams['temporal_window_size'], selected_video_time_features)
 
     # Kmeans Clustering
     kmeans_k = min(hyperparams['kmeans_k'], max(2, len(masked_indices)))

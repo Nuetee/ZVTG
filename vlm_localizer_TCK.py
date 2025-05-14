@@ -413,6 +413,64 @@ def tckmeans_clustering_text_feat_gpu(k, features, text_feature, n_iter=100, tol
     return labels.cpu()
 
 
+def tckmeans_clustering_text_feat_gpu(k, features, text_feature, n_iter=100, tol=1e-4, temporal_window=7):
+    torch.manual_seed(60)
+    features = features.cuda()
+    text_feature = F.normalize(text_feature.cuda(), dim=0)
+    n_samples, n_features = features.shape
+    half_window = temporal_window // 2
+
+    # Initialize centroids using K-Means++
+    centroids = torch.empty((k, n_features), device=features.device)
+    random_idx = torch.randint(0, n_samples, (1,))
+    centroids[0] = features[random_idx]
+    for i in range(1, k):
+        dists = torch.min(torch.cdist(features, centroids[:i])**2, dim=1).values
+        probs = dists / dists.sum()
+        cum_probs = torch.cumsum(probs, dim=0)
+        r = torch.rand(1, device=features.device)
+        next_idx = torch.searchsorted(cum_probs, r).item()
+        centroids[i] = features[next_idx]
+
+    labels = torch.zeros(n_samples, dtype=torch.long, device=features.device)
+
+    for _ in range(n_iter):
+        base_distances = torch.cdist(features, centroids, p=2)  # shape: [n_samples, k]
+        new_labels = torch.empty_like(labels)
+
+        # ✅ Precompute cosine similarity between text_feature and each centroid
+        center_text_sim = F.cosine_similarity(centroids, text_feature.unsqueeze(0), dim=1)  # shape: [k]
+        center_text_sim = torch.clamp(center_text_sim, min=0.0)  # remove negatives
+        center_text_sim = center_text_sim / (center_text_sim.sum() + 1e-8)  # normalize
+
+        for i in range(n_samples):
+            start = max(0, i - half_window)
+            end = min(n_samples, i + half_window + 1)
+
+            # 평균 거리만 계산 (유사도는 centroid 기반이므로 sample-independent)
+            dists_window = base_distances[start:end]  # [w, k]
+            spatial_costs = dists_window.mean(dim=0)  # [k]
+
+            # ✅ 가중치 적용 (중심점-텍스트 유사도 기반)
+            weighted_costs = spatial_costs * (1.0 - center_text_sim)  # 더 유사할수록 낮은 cost
+
+            new_labels[i] = torch.argmin(weighted_costs)
+
+        # Update centroids
+        new_centroids = torch.stack([
+            features[new_labels == j].mean(dim=0) if (new_labels == j).sum() > 0 else centroids[j]
+            for j in range(k)
+        ])
+
+        if torch.allclose(centroids, new_centroids, atol=tol):
+            break
+
+        centroids = new_centroids
+        labels = new_labels
+
+    return labels.cpu()
+
+
 def tckmeans_clustering_weighted_gpu(k, features, n_iter=100, tol=1e-4, temporal_window=3, sigma=1.0):
     torch.manual_seed(60)
     features = features.cuda()
