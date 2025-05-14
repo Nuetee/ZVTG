@@ -28,7 +28,7 @@ def calc_iou(candidates, gt):
     return inter.clip(min=0) / union
 
 def eval_without_llm(data, feature_path, stride, hyperparams, tckmeans):
-    num_of_clusters_list = [3, 4, 5, 6, 7, 8, 9, 10]
+    num_of_clusters_list = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
 
     for num_of_clusters in num_of_clusters_list:
         print("Number of clusters: ", num_of_clusters)
