@@ -365,7 +365,7 @@ def temporal_aware_feature_smoothing_gaussisan(kernel_size, features, sigma=1.0)
     padded_features = torch.cat((features[0].repeat(padding_size, 1), features, features[-1].repeat(padding_size, 1)), dim=0)
     
     # Create Gaussian kernel
-    kernel = gaussian_kernel2(kernel_size, 2).to(features.device).view(1, 1, -1)
+    kernel = gaussian_kernel2(kernel_size, sigma).to(features.device).view(1, 1, -1)
     kernel = kernel.repeat(features.shape[1], 1, 1)  # 채널 수에 맞게 커널 복제
     
     padded_features = padded_features.unsqueeze(0).permute(0, 2, 1)  # (1, 257, 104)
