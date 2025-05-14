@@ -584,6 +584,7 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, tck
         kmeans_labels = tckmeans_clustering_gpu(kmeans_k, temporal_aware_features)
     else:
         kmeans_labels = kmeans_clustering_gpu(kmeans_k, temporal_aware_features)
+        # kmeans_labels = kmeans_clustering_legacy_gpu(kmeans_k, temporal_aware_features)
     
     # Kmeans clusetring 결과에 따라 비디오 장면 Segmentation
     scene_segments = segment_scenes_by_cluster(kmeans_labels)
