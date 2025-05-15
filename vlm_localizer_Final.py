@@ -555,6 +555,7 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, tck
     # data = scores[:, masks].flatten().cpu().numpy()   # 마스크된 부분만 가져오기    
     # data = data.reshape(1, -1)  # shape: (1, 93)
     # data = torch.from_numpy(data)
+    # normalized_scores = data
     ### w/o AN ###
     
     if hyperparams['is_blip2'] or hyperparams['is_blip']:
