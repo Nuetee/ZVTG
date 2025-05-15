@@ -579,7 +579,7 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, tck
     ### w/o TAP ###
 
     # Kmeans Clustering
-    kmeans_k = min(hyperparams['kmeans_k'], max(2, len(masked_indices)))
+    kmeans_k = min(hyperparams['kmeans_k'], max(2, len(masked_indices) - 1))
     if tckmeans:
         kmeans_labels = tckmeans_clustering_gpu(kmeans_k, temporal_aware_features)
     else:
