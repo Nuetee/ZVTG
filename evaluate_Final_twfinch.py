@@ -5,7 +5,7 @@ import json
 import torch
 from tqdm import tqdm
 from chat_bots import get_chat_model
-from vlm_localizer_Final import localize
+from vlm_localizer_Final_twfinch import localize
 from qvhhighlight_eval import eval_submission
 import os
 from llm_prompting import select_proposal, select_proposal_with_score
