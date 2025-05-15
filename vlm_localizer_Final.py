@@ -548,13 +548,13 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, tck
     masks, masked_indices = scores_masking(scores, initial_masks)
 
     # Alignment adjustment of similarity scores
-    # data = scores[:, masks].flatten().cpu().numpy()   # 마스크된 부분만 가져오기    
-    # normalized_scores, is_scale = alignment_adjustment(data, hyperparams['gamma'], scores.device, lambda_max=2, lambda_min=-2)
+    data = scores[:, masks].flatten().cpu().numpy()   # 마스크된 부분만 가져오기    
+    normalized_scores, is_scale = alignment_adjustment(data, hyperparams['gamma'], scores.device, lambda_max=2, lambda_min=-2)
     
     ### w/o AN ###
-    data = scores[:, masks].flatten().cpu().numpy()   # 마스크된 부분만 가져오기    
-    data = data.reshape(1, -1)  # shape: (1, 93)
-    data = torch.from_numpy(data)
+    # data = scores[:, masks].flatten().cpu().numpy()   # 마스크된 부분만 가져오기    
+    # data = data.reshape(1, -1)  # shape: (1, 93)
+    # data = torch.from_numpy(data)
     ### w/o AN ###
     
     if hyperparams['is_blip2'] or hyperparams['is_blip']:
@@ -590,8 +590,8 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, tck
     scene_segments = segment_scenes_by_cluster(kmeans_labels)
 
     # proposal generation by using scene segments integration
-    cum_scores = torch.cumsum(data, dim=1)[0]
-    final_proposals, final_proposals_static_score = get_proposals_with_scores(scene_segments, cum_scores, data, num_frames, hyperparams['prior'])
+    cum_scores = torch.cumsum(normalized_scores, dim=1)[0]
+    final_proposals, final_proposals_static_score = get_proposals_with_scores(scene_segments, cum_scores, normalized_scores, num_frames, hyperparams['prior'])
 
     final_proposals = [
         [

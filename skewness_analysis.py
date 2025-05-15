@@ -158,13 +158,13 @@ def eval_without_llm(data, feature_path, stride, hyperparams, args):
         }
 
     # 전체 데이터를 왜도 절대값 기준 정렬
-    skew_tuples.sort(key=lambda x: abs(x[2]), reverse=True)  # 또는 x[3] for delta
+    skew_tuples.sort(key=lambda x: abs(x[3]), reverse=True)  # 또는 x[3] for delta
 
     total = len(skew_tuples)
     q1 = skew_tuples[:total // 3]
     q2 = skew_tuples[total // 3: 2 * total // 3]
     q3 = skew_tuples[2 * total // 3:]
-    # q4 = skew_tuples[3 * total // 4:]
+    q4 = skew_tuples[3 * total // 4:]
 
     def filter_data(original_data, target_tuples):
         filtered = {}
@@ -188,10 +188,10 @@ def eval_without_llm(data, feature_path, stride, hyperparams, args):
 
     # 저장 디렉토리 및 결과 파일 생성
     os.makedirs("skewness_analysis", exist_ok=True)
-    json.dump(filter_data(data, q1), open(f"skewness_analysis/{args.dataset}_top33_data_skew.json", "w"), indent=2)
-    json.dump(filter_data(data, q2), open(f"skewness_analysis/{args.dataset}_top33to66_data_skew.json", "w"), indent=2)
-    json.dump(filter_data(data, q3), open(f"skewness_analysis/{args.dataset}_top66to100_data_skew.json", "w"), indent=2)
-    # json.dump(filter_data(data, q4), open(f"skewness_analysis/{args.dataset}_bottom25_data_skew.json", "w"), indent=2)
+    json.dump(filter_data(data, q1), open(f"skewness_analysis/{args.dataset}_top25_data_skew_delta.json", "w"), indent=2)
+    json.dump(filter_data(data, q2), open(f"skewness_analysis/{args.dataset}_top25to50_data_skew_delta.json", "w"), indent=2)
+    json.dump(filter_data(data, q3), open(f"skewness_analysis/{args.dataset}_bottom50to25_data_skew_delta.json", "w"), indent=2)
+    json.dump(filter_data(data, q4), open(f"skewness_analysis/{args.dataset}_bottom25_data_skew_delta.json", "w"), indent=2)
     json.dump(data, open(f"skewness_analysis/{args.dataset}_full_data_with_skewness.json", "w"), indent=2)
 
     print("✅ 저장 완료: skewness 기반 데이터 분할 및 전체 메타 포함")
