@@ -39,11 +39,8 @@ def eval_without_llm(data, feature_path, stride, hyperparams, tckmeans):
     pbar = tqdm(data.items())
     # pbar = tqdm(itertools.islice(data.items(), 100))
     # start_time = time.time()  # 실행 시간 측정 시작
-    k = 0
+
     for vid, ann in pbar:
-        if k < 3665:
-            k += 1
-            continue
         duration = ann['duration']
         video_feature = np.load(os.path.join(feature_path, vid+'.npy'))
         
