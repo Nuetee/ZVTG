@@ -582,6 +582,7 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, tck
     ### TW-FINCH ###
     # region
     from twfinch import FINCH
+    temporal_aware_features = temporal_aware_features.cpu().numpy()
     req_clust = min(hyperparams['kmeans_k'], max(2, len(masked_indices)))
     c, num_clust, req_c  = FINCH(temporal_aware_features, req_clust=req_clust, tw_finch=True)
 
