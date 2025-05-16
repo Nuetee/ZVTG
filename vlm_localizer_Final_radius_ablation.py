@@ -582,9 +582,9 @@ def generate_proposal_revise(video_features, sentences, stride, hyperparams, tck
     # Kmeans Clustering
     kmeans_k = min(hyperparams['kmeans_k'], max(2, len(masked_indices)))
     if tckmeans:
-        kmeans_labels = tckmeans_clustering_gpu(kmeans_k, temporal_aware_features)
+        kmeans_labels = tckmeans_clustering_gpu(kmeans_k, temporal_aware_features, hyperparams['window_radius'])
     else:
-        kmeans_labels = kmeans_clustering_gpu(kmeans_k, temporal_aware_features, hyperparams['window_radius'])
+        kmeans_labels = kmeans_clustering_gpu(kmeans_k, temporal_aware_features)
         # kmeans_labels = kmeans_clustering_legacy_gpu(kmeans_k, temporal_aware_features)
     
     # Kmeans clusetring 결과에 따라 비디오 장면 Segmentation
